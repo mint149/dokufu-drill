@@ -7,14 +7,26 @@
 
 ## 現状の構成
 
-- `index.html` 1 ファイルに HTML / CSS / JS をすべて含む。ビルド工程なし。
+- Vite でビルドする静的サイト。`index.html` はマークアップだけで、CSS と JS は `src/` にある。
+  - `theory.js`：音符のモデル、出題範囲、出題の選び方（純粋関数）
+  - `judge.js`：正誤判定とセッションの集計（純粋関数）
+  - `staff.js`：五線譜の描画 / `keyboard.js`：画面の鍵盤 / `audio.js`：合成音と振動
+  - `midi-input.js`：電子ピアノからの入力（Web MIDI） / `store.js`：設定と記録 / `version.js`：表示バージョン
+  - `main.js`：画面の流れ（出題、モード、設定・記録のシート）
 - 五線譜は SVG を手書きで描画。音部記号・変化記号は Noto Music フォント（Google Fonts）のグリフ。
 - 音は Web Audio API で合成（外部音源なし）。
 - 設定・記録は localStorage キー `dokufu.v1` に保存。形式を変えるときは移行処理を入れるか、キーのバージョンを上げる。
 
+## 開発
+
+- `npm run dev`：開発サーバー / `npm test`：単体テスト（Vitest） / `npm run build`：`dist/` にビルド
+- 判定や音楽理論のロジックは DOM に触れない純粋関数として `theory.js`・`judge.js` などに置き、`*.test.js` でテストする。
+- 段階的な計画は `docs/ROADMAP.md` にある。
+
 ## 公開とバージョン
 
 - GitHub Pages に Actions で公開する。`.github/build-site.sh` がトップ（最新の `v*` タグ）・`/vX.Y.Z/`（各タグ）・`/next/`（main）を組み立てる。
+- 各バージョンはその時点のコードでビルドする（`package.json` があればビルドして `dist/` を公開、ない v0.0.x はファイルをそのまま公開）。テストが失敗すると公開しない。
 - `main` への push は `/next/` だけに反映される。リリースは `vX.Y.Z` タグの push で行う。
 - 表示中のバージョンは `<meta name="app-version">` で、公開時にスクリプトが書き換える（ローカルでは `dev`）。
 - localStorage は全バージョンで共有される。古いリリースが新しい形式のデータで壊れないようにする。
@@ -28,6 +40,4 @@
 
 ## 今後の方向性
 
-- 複数音・フレーズの出題、BPM 指定でのタイミング判定
-- 機能が増えてきたら、Vite などを使ってファイルを分割する。楽譜描画には VexFlow や OpenSheetMusicDisplay も検討する
-- 判定ロジック（音高・タイミング）は UI から切り離して、単体テストを書く
+`docs/ROADMAP.md` を参照。最終目標は、MIDI ファイルの全体または区間を指定 BPM で弾き、和音を含めて正確さを判定すること。

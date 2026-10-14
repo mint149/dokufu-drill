@@ -14,13 +14,13 @@
 
 ## 動かし方
 
-ビルドは不要です。`index.html` をブラウザで開けば動きます。
-
-ローカルサーバーで確認する場合は、たとえば次のコマンドを使います。
+Node.js（22.12 以降）が必要です。
 
 ```sh
-python3 -m http.server 8000
-# http://localhost:8000 を開く
+npm install
+npm run dev     # 開発サーバー（表示された URL を開く）
+npm test        # 単体テスト
+npm run build   # dist/ にビルド
 ```
 
 ## 公開

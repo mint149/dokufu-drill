@@ -11,10 +11,22 @@ main_ref=${MAIN_REF:-origin/main}
 rm -rf "$out"
 mkdir -p "$out"
 
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+
 export_ref() { # ref dest label
-  mkdir -p "$2"
-  git archive "$1" | tar -x -C "$2"
-  rm -rf "$2/.github"
+  local src="$work/src-$3-$RANDOM"
+  mkdir -p "$src" "$2"
+  git archive "$1" | tar -x -C "$src"
+  if [ -f "$src/package.json" ]; then
+    # Vite era (v0.1+): build and publish dist/
+    (cd "$src" && npm ci --no-audit --no-fund && npm run build)
+    cp -R "$src/dist/." "$2/"
+  else
+    # Single-file era (v0.0.x): publish the repository files as they are
+    rm -rf "$src/.github"
+    cp -R "$src/." "$2/"
+  fi
   perl -pi -e 's/(<meta name="app-version" content=")[^"]*(")/${1}'"$3"'${2}/' "$2/index.html"
 }
 
