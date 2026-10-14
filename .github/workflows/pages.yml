@@ -39,3 +39,7 @@ jobs:
           path: _site
       - id: deploy
         uses: actions/deploy-pages@v4
+        env:
+          # deploy-pages uses GITHUB_SHA as the deployment's build version, and Pages skips a version it has
+          # already deployed. A release tag usually points at the commit main just deployed, so make it unique.
+          GITHUB_SHA: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
