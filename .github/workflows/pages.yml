@@ -1,9 +1,11 @@
 name: Deploy Pages
 
+# Only main pushes deploy. Pages identifies a deployment by its commit SHA and will not redeploy a SHA it has
+# already deployed, and a release tag points at a commit main already deployed, so a tag push could not update
+# the site. A release is published by pushing the tag together with a new (empty) commit on main.
 on:
   push:
     branches: [main]
-    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -34,39 +36,8 @@ jobs:
       - name: Build site
         run: .github/build-site.sh _site
       - uses: actions/configure-pages@v5
-      - id: upload
-        uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
-      # Deploy through the Pages API instead of actions/deploy-pages: that action always uses the commit SHA as
-      # the build version, and Pages skips a version it has already deployed. A release tag usually points at the
-      # commit main just deployed, so the version must be unique per run.
       - id: deploy
-        name: Deploy to GitHub Pages
-        uses: actions/github-script@v7
-        env:
-          ARTIFACT_ID: ${{ steps.upload.outputs.artifact_id }}
-        with:
-          script: |
-            const version = `${context.sha}-${context.runId}-${context.runAttempt}`;
-            const { data } = await github.request('POST /repos/{owner}/{repo}/pages/deployments', {
-              ...context.repo,
-              artifact_id: Number(process.env.ARTIFACT_ID),
-              pages_build_version: version,
-              oidc_token: await core.getIDToken(),
-            });
-            core.info(`Created deployment ${version}`);
-            for (let i = 0; i < 60; i++) {
-              await new Promise((r) => setTimeout(r, 5000));
-              const { data: st } = await github.request(`GET ${data.status_url}`);
-              core.info(`status: ${st.status}`);
-              if (st.status === 'succeed') {
-                core.setOutput('page_url', data.page_url);
-                return;
-              }
-              if (['deployment_failed', 'deployment_lost', 'deployment_content_failed', 'deployment_perms_error', 'deployment_attempt_error'].includes(st.status)) {
-                core.setFailed(`Pages deployment failed: ${st.status}`);
-                return;
-              }
-            }
-            core.setFailed('Timed out waiting for the Pages deployment');
+        uses: actions/deploy-pages@v4

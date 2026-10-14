@@ -34,12 +34,15 @@ GitHub Actions（`.github/workflows/pages.yml`）が GitHub Pages に公開し�
 | https://mint149.github.io/dokufu-drill/v0.0.1/ など | 各リリースをそのまま固定 |
 
 - `main` に push すると `/next/` が更新されます。トップのページは変わりません。
-- `/next/` で確認して問題なければ、タグを付けて push するとトップのページが新しい版に切り替わります。
+- `/next/` で確認して問題なければ、タグを付け、リリース用の空コミットと一緒に push するとトップのページが新しい版に切り替わります。
 
 ```sh
-git tag v0.0.2
-git push origin v0.0.2
+git tag v0.2.0
+git commit --allow-empty -m "v0.2.0 をリリース"
+git push origin main v0.2.0
 ```
+
+タグだけを push しても公開はされません。GitHub Pages は同じコミットを公開し直さないため、新しいコミットを main に push して公開します。
 
 設定と記録（localStorage）は全バージョンで共通です。保存形式を変えるときは、古い版でも壊れないように移行処理を入れるかキーのバージョンを上げてください。
 
