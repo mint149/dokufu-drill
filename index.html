@@ -78,6 +78,10 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 #staff .enter{animation:enter .14s ease-out}
 @keyframes enter{from{transform:translateX(6px);opacity:.3}to{transform:none;opacity:1}}
 @media (prefers-reduced-motion: reduce){#staff .enter{animation:none}}
+.midi{position:absolute;top:6px;left:10px;display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);max-width:45%;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
+.midi::before{content:"";flex:0 0 auto;width:7px;height:7px;border-radius:50%;background:var(--ok)}
+.midi-st{font-size:13px;color:var(--muted)}
 .fb{min-height:1.5em;font-size:15px;font-weight:500;text-align:center;text-wrap:balance}
 .fb.ok{color:var(--ok)} .fb.ng{color:var(--ng)}
 
@@ -157,6 +161,7 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
   <main class="stage">
     <svg id="staff" viewBox="0 0 260 150" aria-label="五線譜"></svg>
+    <div class="midi" id="midiBadge" hidden></div>
     <div class="fb" id="fb"></div>
     <div class="panel" id="panel" hidden></div>
   </main>
@@ -191,7 +196,7 @@ let store={settings:{},notes:{},best:{}};
 try{const r=localStorage.getItem(LS);if(r){const p=JSON.parse(r);store=Object.assign(store,p);}}catch(e){}
 function save(){try{localStorage.setItem(LS,JSON.stringify(store));}catch(e){}}
 
-const DEF={clef:'T',ledger:2,acc:0,octave:0,labels:'C',names:'jp',weak:1,sound:1,vibe:1};
+const DEF={clef:'T',ledger:2,acc:0,octave:0,labels:'C',names:'jp',weak:1,sound:1,vibe:1,midi:0};
 const S=Object.assign({},DEF,store.settings||{});
 const STRUCT=['clef','ledger','acc','octave'];
 
@@ -363,18 +368,22 @@ function record(missed){
 function onKey(el){
   const m=+el.dataset.midi;
   unlock();if(S.sound)play(m);
+  judge(m,el);
+}
+/* m: MIDI note number. el: on-screen key to color (may be null for MIDI input outside the keyboard range). */
+function judge(m,el){
   if(locked||!cur)return;
   if(mode==='timed'&&!running)return;
   const t=midi(cur);
   const ok=S.octave?m===t:((m-t)%12+12)%12===0;
   if(ok){
-    flash(el,'ok');ses.shown++;
+    if(el)flash(el,'ok');ses.shown++;
     if(!cur.missed){ses.first++;ses.streak++;ses.best=Math.max(ses.best,ses.streak);ses.rts.push(performance.now()-shownAt);}
     record(cur.missed);
     setFb(nm(cur,true)+'  ✓','ok');locked=true;hud();
     setTimeout(()=>{if(mode==='timed'&&!running)return;next();},cur.missed?260:190);
   }else{
-    flash(el,'ng',320);vibe();
+    if(el)flash(el,'ng',320);vibe();
     if(!cur.missed){cur.missed=true;ses.streak=0;draw();}
     let h=null;
     document.querySelectorAll('.key').forEach(k=>{
@@ -484,9 +493,14 @@ function defs(){return[
 function renderSettings(){
   $('settingsBody').innerHTML=defs().map(d=>`<div class="row"><label>${d.label}</label><div class="seg">${
     d.opts.map(([v,t])=>`<button data-k="${d.k}" data-v="${v}" aria-pressed="${String(S[d.k])===String(v)}">${t}</button>`).join('')
-  }</div>${d.help?`<p class="help">${d.help}</p>`:''}</div>`).join('');
+  }</div>${d.help?`<p class="help">${d.help}</p>`:''}</div>`).join('')+
+  `<div class="row" id="midiRow"><label>電子ピアノ（MIDI）</label><button class="ghost" data-midi-toggle></button>
+   <p class="help midi-st"></p>
+   <p class="help">USB ケーブルで電子ピアノをつなぐと、弾いた鍵盤で答えられます（スマホは OTG アダプタが必要）。</p></div>`;
+  updMidi();
 }
 $('settingsBody').addEventListener('click',e=>{
+  if(e.target.closest('[data-midi-toggle]')){setMidi(!S.midi);return;}
   const b=e.target.closest('button[data-k]');if(!b)return;
   const k=b.dataset.k,raw=b.dataset.v,v=/^\d+$/.test(raw)?+raw:raw;
   if(S[k]===v)return;
@@ -495,6 +509,55 @@ $('settingsBody').addEventListener('click',e=>{
   else if(k==='labels'||k==='names'){buildKb();if(cur&&k==='names'&&$('fb').textContent)setFb('');}
   renderSettings();
 });
+
+/* ---------- MIDI input (electronic piano) ---------- */
+let midiAcc=null,midiErr='';const held=new Map();
+const midiOk=()=>!!navigator.requestMIDIAccess&&window.isSecureContext;
+const midiInputs=()=>midiAcc?[...midiAcc.inputs.values()].filter(i=>i.state==='connected'):[];
+function keyFor(m){
+  // Non-octave mode: any octave on the piano maps to the same pitch class on the on-screen keyboard.
+  const t=S.octave?m:kbLo+((m-kbLo)%12+12)%12;
+  return document.querySelector(`.key[data-midi="${t}"]`);
+}
+function onMidi(e){
+  if(!e.data||e.data.length<3)return;
+  const[st,n,v]=e.data,type=st&0xF0;
+  if(type===0x90&&v>0){
+    const el=keyFor(n);if(el)el.classList.add('down');held.set(n,el);
+    judge(n,el);
+  }else if(type===0x80||type===0x90){
+    const el=held.get(n);if(el)el.classList.remove('down');held.delete(n);
+  }
+}
+function bindMidi(){
+  if(midiAcc)midiAcc.inputs.forEach(i=>{i.onmidimessage=S.midi?onMidi:null;});
+  updMidi();
+}
+async function connectMidi(){
+  midiErr='';
+  if(!midiOk()){midiErr='このブラウザは Web MIDI に対応していません（Android の Chrome などで開いてください）';updMidi();return;}
+  try{
+    midiAcc=await navigator.requestMIDIAccess();
+    midiAcc.onstatechange=bindMidi;
+  }catch(e){midiAcc=null;midiErr='MIDI の利用が許可されませんでした。ブラウザのサイト設定で許可してください';}
+  bindMidi();
+}
+function setMidi(on){
+  S.midi=on?1:0;store.settings=Object.assign({},S);save();
+  if(on)connectMidi();else{held.forEach(el=>el&&el.classList.remove('down'));held.clear();midiErr='';bindMidi();}
+}
+function updMidi(){
+  const ins=S.midi?midiInputs():[],bd=$('midiBadge');
+  bd.hidden=!ins.length;bd.textContent=ins.map(i=>i.name).join('、');
+  const row=$('midiRow');if(!row)return;
+  let st;
+  if(!S.midi)st='オフ';
+  else if(midiErr)st=midiErr;
+  else if(!midiAcc)st='接続中…';
+  else st=ins.length?'接続中：'+ins.map(i=>i.name).join('、'):'電子ピアノが見つかりません。ケーブルと電源を確認してください';
+  row.querySelector('.midi-st').textContent=st;
+  row.querySelector('button').textContent=S.midi?'オフにする':'接続する';
+}
 
 /* ---------- stats sheet ---------- */
 let armed=false;
@@ -537,6 +600,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelect
 
 /* ---------- boot ---------- */
 buildPool();buildKb();setMode('practice');
+if(S.midi)connectMidi();
 if(document.fonts&&document.fonts.load){
   Promise.all(['𝄞𝄢','♯♭'].map(t=>document.fonts.load('100px "Noto Music"',t)))
     .then(()=>{gcache={};const f=cur&&cur.fresh;draw();}).catch(()=>{});
