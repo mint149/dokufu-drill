@@ -53,7 +53,7 @@ export function keyForMidi(m, { lo, octave }) {
 }
 
 export function clearMarks() {
-  document.querySelectorAll('.key.ok,.key.ng,.key.hint').forEach((k) => k.classList.remove('ok', 'ng', 'hint'));
+  document.querySelectorAll('.key.ok,.key.ng,.key.hint,.key.sel').forEach((k) => k.classList.remove('ok', 'ng', 'hint', 'sel'));
 }
 
 export function flash(el, cls, ms) {

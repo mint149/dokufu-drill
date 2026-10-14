@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildPool, midiOf, noteName, noteWeight, pickNote } from './theory.js';
+import { CHORD_SPAN, buildPool, midiName, midiOf, noteName, noteWeight, pickChord, pickNote } from './theory.js';
 
 describe('midiOf', () => {
   it('converts staff notes to MIDI numbers', () => {
@@ -62,5 +62,52 @@ describe('pickNote', () => {
     const n = pickNote(pool, null, () => 1);
     n.missed = true;
     expect(pool.some((x) => x.missed)).toBe(false);
+  });
+});
+
+describe('midiName', () => {
+  it('names played notes with sharps', () => {
+    expect(midiName(61, 'jp', true)).toBe('ド♯4');
+    expect(midiName(70, 'en', false)).toBe('A♯');
+    expect(midiName(48, 'en', true)).toBe('C3');
+  });
+});
+
+describe('pickChord', () => {
+  const pc = (n) => midiOf(n) % 12;
+  for (const [label, opts] of [
+    ['treble, no accidentals', { clef: 'T', ledger: 2, acc: 0 }],
+    ['grand staff with accidentals', { clef: 'G', ledger: 3, acc: 1 }],
+  ]) {
+    it(`builds playable chords (${label})`, () => {
+      const pool = buildPool(opts);
+      for (const size of [2, 3]) {
+        for (let i = 0; i < 300; i++) {
+          const q = pickChord(pool, size, null, () => 1);
+          const ds = q.notes.map((n) => n.d);
+          expect(q.notes).toHaveLength(size);
+          expect(q.notes.every((n) => n.st === q.st)).toBe(true);
+          expect(ds).toEqual([...ds].sort((a, b) => a - b));
+          expect(new Set(ds).size).toBe(size);
+          expect(new Set(q.notes.map(pc)).size).toBe(size);
+          expect(ds[size - 1] - ds[0]).toBeLessThanOrEqual(CHORD_SPAN);
+        }
+      }
+    });
+  }
+  it('a single-note question is the picked note itself', () => {
+    const pool = buildPool({ clef: 'T', ledger: 0, acc: 0 });
+    const q = pickChord(pool, 1, null, () => 1);
+    expect(q.notes).toHaveLength(1);
+    expect(q.id).toBe(q.notes[0].id);
+  });
+  it('does not repeat the previous question', () => {
+    const pool = buildPool({ clef: 'T', ledger: 0, acc: 0 });
+    let prev = null;
+    for (let i = 0; i < 100; i++) {
+      const q = pickChord(pool, 2, prev, () => 1);
+      expect(q.id).not.toBe(prev);
+      prev = q.id;
+    }
   });
 });

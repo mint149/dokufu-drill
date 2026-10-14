@@ -1,5 +1,6 @@
 // Staff rendering: hand-drawn SVG lines plus Noto Music glyphs for clefs and accidentals.
 import { BOT } from './theory.js';
+import { chordLayout } from './engrave.js';
 
 /* ---------- glyph measurement (ink bounds via canvas) ---------- */
 let gcache = {};
@@ -38,8 +39,8 @@ function layout(clef) {
 }
 
 /**
- * Draw the staff for clef ('T' / 'B' / 'G' grand staff) and the current note, if any.
- * cur: {st, d, acc, missed, fresh}; fresh is cleared after the enter animation is applied once.
+ * Draw the staff for clef ('T' / 'B' / 'G' grand staff) and the current question, if any.
+ * cur: {st, notes: [{d, acc}] sorted low to high, missed, fresh}; fresh is cleared after the enter animation is applied once.
  */
 export function drawStaff(svg, clef, cur) {
   const L = layout(clef);
@@ -65,16 +66,24 @@ export function drawStaff(svg, clef, cur) {
   if (cur) {
     const top = L.tops[cur.st], b = BOT[cur.st], bl = top + 40;
     const yOf = (d) => bl - (d - b) * 5;
-    const y = yOf(cur.d), nx = 160;
+    const ds = cur.notes.map((n) => n.d), lo = ds[0], hi = ds[ds.length - 1];
+    const { stemUp, shift, accCol } = chordLayout(ds, b + 4, cur.notes.map((n) => n.acc !== 0));
+    const nx = 160, HEAD = 10.8, ACC_COL = 10;
     const c = cur.missed ? ' ng' : '';
+    const lx0 = nx - 12 - (shift.includes(-1) ? HEAD : 0), lx1 = nx + 12 + (shift.includes(1) ? HEAD : 0);
     let g = '';
-    if (cur.d <= b - 2) for (let ld = b - 2; ld >= cur.d; ld -= 2) g += `<line class="ledger" x1="${nx - 12}" y1="${yOf(ld)}" x2="${nx + 12}" y2="${yOf(ld)}"/>`;
-    if (cur.d >= b + 10) for (let ld = b + 10; ld <= cur.d; ld += 2) g += `<line class="ledger" x1="${nx - 12}" y1="${yOf(ld)}" x2="${nx + 12}" y2="${yOf(ld)}"/>`;
-    if (cur.d >= b + 4) g += `<line class="stem${c}" x1="${nx - 5.4}" y1="${y + 1}" x2="${nx - 5.4}" y2="${y + 34}"/>`;
-    else g += `<line class="stem${c}" x1="${nx + 5.4}" y1="${y - 1}" x2="${nx + 5.4}" y2="${y - 34}"/>`;
-    g += `<ellipse class="note${c}" cx="${nx}" cy="${y}" rx="6.3" ry="4.4" transform="rotate(-20 ${nx} ${y})"/>`;
-    if (cur.acc === 1) g += glyph('♯', y - 14, 28, { right: nx - 11, cls: c.trim() });
-    if (cur.acc === -1) g += glyph('♭', y - 19, 25, { right: nx - 11, cls: c.trim() });
+    if (lo <= b - 2) for (let ld = b - 2; ld >= lo; ld -= 2) g += `<line class="ledger" x1="${lx0}" y1="${yOf(ld)}" x2="${lx1}" y2="${yOf(ld)}"/>`;
+    if (hi >= b + 10) for (let ld = b + 10; ld <= hi; ld += 2) g += `<line class="ledger" x1="${lx0}" y1="${yOf(ld)}" x2="${lx1}" y2="${yOf(ld)}"/>`;
+    if (stemUp) g += `<line class="stem${c}" x1="${nx + 5.4}" y1="${yOf(lo) - 1}" x2="${nx + 5.4}" y2="${yOf(hi) - 34}"/>`;
+    else g += `<line class="stem${c}" x1="${nx - 5.4}" y1="${yOf(hi) + 1}" x2="${nx - 5.4}" y2="${yOf(lo) + 34}"/>`;
+    const accRight = nx - 11 - (shift.includes(-1) ? HEAD : 0);
+    cur.notes.forEach((n, i) => {
+      const y = yOf(n.d), hx = nx + shift[i] * HEAD;
+      g += `<ellipse class="note${c}" cx="${hx}" cy="${y}" rx="6.3" ry="4.4" transform="rotate(-20 ${hx} ${y})"/>`;
+      const right = accRight - accCol[i] * ACC_COL;
+      if (n.acc === 1) g += glyph('♯', y - 14, 28, { right, cls: c.trim() });
+      if (n.acc === -1) g += glyph('♭', y - 19, 25, { right, cls: c.trim() });
+    });
     s += `<g class="${cur.fresh ? 'enter' : ''}">${g}</g>`;
     cur.fresh = false;
   }

@@ -43,3 +43,54 @@ export function recordNote(notes, id, missed) {
   if (missed) r.m++;
   return r;
 }
+
+/**
+ * Compare the notes played as one chord with the target notes.
+ * Returns {ok, missing: target notes not played, extra: played notes that are not in the chord}.
+ * With octave=false, notes are compared by pitch class.
+ */
+export function judgeChord(played, targets, octave) {
+  const hit = (a, b) => isMatch(a, b, octave);
+  const missing = targets.filter((t) => !played.some((p) => hit(p, t)));
+  const extra = played.filter((p) => !targets.some((t) => hit(p, t)));
+  return { ok: !missing.length && !extra.length, missing, extra };
+}
+
+/** How long after the first note-on later notes still count as the same chord. */
+export const CHORD_WINDOW_MS = 120;
+
+/**
+ * Groups note-ons into chords. A group closes when `size` distinct notes have arrived, or when the caller calls
+ * flush() after the window (deadline()) has passed. Times are in ms (MIDIMessageEvent.timeStamp).
+ */
+export class ChordCollector {
+  constructor(size, windowMs = CHORD_WINDOW_MS) {
+    this.size = size;
+    this.windowMs = windowMs;
+    this.notes = [];
+    this.start = null;
+  }
+  /** Add a note-on. Returns the finished group when it reaches `size` notes, otherwise null. */
+  add(note, t) {
+    if (this.start != null && t - this.start > this.windowMs) {
+      // The caller missed the deadline; the earlier notes form their own group.
+      const done = this.flush();
+      this.add(note, t);
+      return done;
+    }
+    if (this.start == null) this.start = t;
+    if (!this.notes.includes(note)) this.notes.push(note);
+    return this.notes.length >= this.size ? this.flush() : null;
+  }
+  /** Time at which the open group should be closed, or null when empty. */
+  deadline() {
+    return this.start == null ? null : this.start + this.windowMs;
+  }
+  /** Close the open group and return its notes (possibly empty). */
+  flush() {
+    const g = this.notes;
+    this.notes = [];
+    this.start = null;
+    return g;
+  }
+}

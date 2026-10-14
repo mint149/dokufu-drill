@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { accuracy, avgSeconds, isMatch, newSession, pitchClass, recordNote, scoreCorrect, scoreMiss } from './judge.js';
+import { ChordCollector, accuracy, avgSeconds, isMatch, judgeChord, newSession, pitchClass, recordNote, scoreCorrect, scoreMiss } from './judge.js';
 
 describe('isMatch', () => {
   it('note-name judging accepts any octave of the same pitch class', () => {
@@ -56,5 +56,58 @@ describe('recordNote', () => {
     recordNote(notes, 'T:30:0', false);
     recordNote(notes, 'T:30:0', true);
     expect(notes['T:30:0']).toEqual({ s: 2, m: 1 });
+  });
+});
+
+describe('judgeChord', () => {
+  const C = [60, 64, 67]; // C4 E4 G4
+  it('accepts the chord in any order', () => {
+    expect(judgeChord([67, 60, 64], C, true)).toEqual({ ok: true, missing: [], extra: [] });
+  });
+  it('reports missing and extra notes', () => {
+    expect(judgeChord([60, 65, 67], C, true)).toEqual({ ok: false, missing: [64], extra: [65] });
+    expect(judgeChord([60, 64], C, true)).toEqual({ ok: false, missing: [67], extra: [] });
+    expect(judgeChord([60, 64, 67, 71], C, true)).toEqual({ ok: false, missing: [], extra: [71] });
+  });
+  it('note-name judging accepts any octave and voicing', () => {
+    expect(judgeChord([48, 76, 55], C, false).ok).toBe(true);
+    expect(judgeChord([48, 76, 55], C, true).ok).toBe(false);
+  });
+  it('works for single notes', () => {
+    expect(judgeChord([72], [60], false).ok).toBe(true);
+    expect(judgeChord([62], [60], false)).toEqual({ ok: false, missing: [60], extra: [62] });
+  });
+});
+
+describe('ChordCollector', () => {
+  it('closes a group once all notes arrived', () => {
+    const c = new ChordCollector(3, 100);
+    expect(c.add(60, 0)).toBeNull();
+    expect(c.add(64, 20)).toBeNull();
+    expect(c.add(67, 40)).toEqual([60, 64, 67]);
+    expect(c.deadline()).toBeNull();
+  });
+  it('a single-note collector answers immediately', () => {
+    expect(new ChordCollector(1).add(60, 0)).toEqual([60]);
+  });
+  it('flush returns an incomplete group after the window', () => {
+    const c = new ChordCollector(3, 100);
+    c.add(60, 10);
+    c.add(64, 30);
+    expect(c.deadline()).toBe(110);
+    expect(c.flush()).toEqual([60, 64]);
+    expect(c.flush()).toEqual([]);
+  });
+  it('a note after the window starts a new group', () => {
+    const c = new ChordCollector(2, 100);
+    c.add(60, 0);
+    expect(c.add(64, 150)).toEqual([60]);
+    expect(c.add(67, 160)).toEqual([64, 67]);
+  });
+  it('ignores a repeated note in the same group', () => {
+    const c = new ChordCollector(2, 100);
+    expect(c.add(60, 0)).toBeNull();
+    expect(c.add(60, 10)).toBeNull();
+    expect(c.add(64, 20)).toEqual([60, 64]);
   });
 });

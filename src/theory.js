@@ -56,3 +56,49 @@ export function pickNote(pool, lastId, weightOf, rand = Math.random) {
   }
   return Object.assign({}, c[c.length - 1]);
 }
+
+const SHARP_NAMES = {
+  jp: ['ド', 'ド♯', 'レ', 'レ♯', 'ミ', 'ファ', 'ファ♯', 'ソ', 'ソ♯', 'ラ', 'ラ♯', 'シ'],
+  en: ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'],
+};
+
+/** Name of a played MIDI note (no staff spelling, so black keys use ♯). */
+export function midiName(m, names, withOct) {
+  const s = SHARP_NAMES[names === 'jp' ? 'jp' : 'en'][((m % 12) + 12) % 12];
+  return withOct ? s + (Math.floor(m / 12) - 1) : s;
+}
+
+/** Largest distance between the lowest and highest chord note, in diatonic steps (6 = a seventh). */
+export const CHORD_SPAN = 6;
+
+/**
+ * Pick a question of `size` notes, all on one staff, within CHORD_SPAN, with distinct staff positions and
+ * distinct pitch classes (so "note name only" judging stays unambiguous). Notes are sorted low to high.
+ * Returns {st, notes, id}. Avoids repeating lastId when possible.
+ */
+export function pickChord(pool, size, lastId, weightOf, rand = Math.random) {
+  let best = null;
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const first = pickNote(pool, size === 1 ? lastId : null, weightOf, rand);
+    const notes = [first];
+    while (notes.length < size) {
+      const ds = notes.map((n) => n.d), pcs = notes.map((n) => ((midiOf(n) % 12) + 12) % 12);
+      const lo = Math.min(...ds), hi = Math.max(...ds);
+      const cand = pool.filter(
+        (n) =>
+          n.st === first.st &&
+          !ds.includes(n.d) &&
+          !pcs.includes(((midiOf(n) % 12) + 12) % 12) &&
+          Math.max(hi, n.d) - Math.min(lo, n.d) <= CHORD_SPAN
+      );
+      if (!cand.length) break;
+      notes.push(pickNote(cand, null, weightOf, rand));
+    }
+    if (notes.length < size) continue;
+    notes.sort((a, b) => a.d - b.d);
+    const q = { st: first.st, notes, id: notes.map((n) => n.id).join('|') };
+    if (q.id !== lastId) return q;
+    best = q;
+  }
+  return best;
+}
