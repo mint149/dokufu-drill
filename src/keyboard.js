@@ -62,7 +62,7 @@ export function flash(el, cls, ms) {
 }
 
 /**
- * Call onKey(keyElement) for each tap.
+ * Call onKey(keyElement, t) for each tap; t is the pointerdown time (performance.now() timebase) for timing.
  * A tap is judged on pointerup, and dragging (horizontal scroll) cancels it, so scrolling never answers.
  */
 export function attachTapInput(kb, wrap, onKey) {
@@ -78,7 +78,7 @@ export function attachTapInput(kb, wrap, onKey) {
     if (!k) return;
     if (e.pointerType === 'mouse') e.preventDefault();
     endPress();
-    press = { k, id: e.pointerId, x: e.clientX, y: e.clientY, sl: wrap.scrollLeft };
+    press = { k, id: e.pointerId, x: e.clientX, y: e.clientY, sl: wrap.scrollLeft, t: e.timeStamp };
     k.classList.add('down');
   });
   kb.addEventListener('pointermove', (e) => {
@@ -87,9 +87,9 @@ export function attachTapInput(kb, wrap, onKey) {
   });
   kb.addEventListener('pointerup', (e) => {
     if (!press || e.pointerId !== press.id) return;
-    const k = press.k, moved = Math.abs(wrap.scrollLeft - press.sl) > 3;
+    const k = press.k, t = press.t, moved = Math.abs(wrap.scrollLeft - press.sl) > 3;
     endPress();
-    if (!moved) onKey(k);
+    if (!moved) onKey(k, t);
   });
   kb.addEventListener('pointercancel', endPress);
   wrap.addEventListener('scroll', () => {
@@ -98,7 +98,7 @@ export function attachTapInput(kb, wrap, onKey) {
   kb.addEventListener('keydown', (e) => {
     if ((e.key === 'Enter' || e.key === ' ') && e.target.classList.contains('key')) {
       e.preventDefault();
-      onKey(e.target);
+      onKey(e.target, e.timeStamp);
     }
   });
 }

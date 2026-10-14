@@ -8,6 +8,7 @@ import { drawStaff, resetGlyphCache } from './staff.js';
 import { attachTapInput, buildKeyboard, clearMarks, flash, keyForMidi } from './keyboard.js';
 import { playTone, unlock, vibrate } from './audio.js';
 import { createMidiInput } from './midi-input.js';
+import { createRhythmMode } from './rhythm.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -51,10 +52,11 @@ function next() {
 const updSubmit = () => ($('submit').hidden = !cur || S.chord < 2);
 const chordName = (notes) => notes.map((n) => nm(n, true)).join('・');
 
-function onKey(el) {
+function onKey(el, t) {
   const m = +el.dataset.midi;
   unlock();
   if (S.sound) playTone(m);
+  if (mode === 'rhythm') return rhythm.onNote(m, t);
   if (S.chord > 1) {
     // Chords: taps select keys, 決定 submits them.
     if (!locked) el.classList.toggle('sel');
@@ -140,6 +142,7 @@ $('submit').addEventListener('click', submitSelection);
 attachTapInput($('kb'), $('kbwrap'), onKey);
 
 function hud() {
+  if (mode === 'rhythm') return rhythm.hud();
   $('hCorrect').textContent = ses.first;
   $('hStreak').textContent = ses.streak;
   const acc = accuracy(ses);
@@ -218,13 +221,31 @@ function finishTimed() {
   $('again').addEventListener('click', startTimed);
   $('toPractice').addEventListener('click', () => setMode('practice'));
 }
+const rhythm = createRhythmMode({
+  $,
+  getPool: () => pool,
+  weightOf: (n) => (S.weak ? noteWeight(store.notes[n.id]) : 1),
+  setFb,
+});
 function setMode(m) {
+  if (mode === 'rhythm') rhythm.exit();
   mode = m;
   clearInterval(timer);
   running = false;
   ses = newSession();
   $('tabPractice').setAttribute('aria-selected', m === 'practice');
   $('tabTimed').setAttribute('aria-selected', m === 'timed');
+  $('tabRhythm').setAttribute('aria-selected', m === 'rhythm');
+  $('staff').toggleAttribute('hidden', m === 'rhythm'); // an SVG element has no .hidden property
+  if (m === 'rhythm') {
+    cur = null;
+    updSubmit();
+    clearMarks();
+    hidePanel();
+    setFb('');
+    hud();
+    return rhythm.enter();
+  }
   if (m === 'timed') {
     cur = null;
     updSubmit();
@@ -240,17 +261,19 @@ function setMode(m) {
 }
 $('tabPractice').addEventListener('click', () => setMode('practice'));
 $('tabTimed').addEventListener('click', () => setMode('timed'));
+$('tabRhythm').addEventListener('click', () => setMode('rhythm'));
 
 /* ---------- MIDI input (electronic piano) ---------- */
 const held = new Map(); // note -> on-screen key lit while the piano key is held
 const midi = createMidiInput({
   isEnabled: () => !!S.midi,
-  onNote(ev) {
+  onNote(ev, t) {
     if (ev.type === 'on') {
       const el = keyForMidi(ev.note, { lo: kbRange.lo, octave: S.octave });
       if (el) el.classList.add('down');
       held.set(ev.note, el);
-      collectNote(ev.note, el);
+      if (mode === 'rhythm') rhythm.onNote(ev.note, t);
+      else collectNote(ev.note, el);
     } else {
       const el = held.get(ev.note);
       if (el) el.classList.remove('down');
@@ -292,6 +315,7 @@ function defs() {
     { k: 'weak', label: '苦手な音を多めに出す', opts: [[1, 'オン'], [0, 'オフ']] },
     { k: 'sound', label: '鍵盤の音', opts: [[1, 'オン'], [0, 'オフ']] },
     { k: 'vibe', label: 'ミスで振動', opts: [[1, 'オン'], [0, 'オフ']], help: '対応していない端末では振動しません' },
+    { k: 'measures', label: 'リズムの長さ', opts: [[1, '1小節'], [2, '2小節']], help: 'リズムのタブで出すフレーズの長さ' },
   ];
 }
 function renderSettings() {
@@ -307,12 +331,22 @@ function renderSettings() {
     `<div class="row" id="midiRow"><label>電子ピアノ（MIDI）</label><button class="ghost" data-midi-toggle></button>
    <p class="help midi-st"></p>
    <p class="help">USB ケーブルで電子ピアノをつなぐと、弾いた鍵盤で答えられます（スマホは OTG アダプタが必要）。</p></div>
+  <div class="row"><label>音のずれの補正</label><span class="midi-st">${S.latency > 0 ? '+' : ''}${S.latency}ms</span>
+   <button class="ghost" data-calibrate>測定する</button>
+   <p class="help">リズムの判定で、メトロノームの音が聞こえるまでの遅れを差し引きます。イヤホンやスピーカーを変えたら測り直してください。</p></div>
   <p class="ver">バージョン ${VER_LABEL}</p>`;
   updMidi();
 }
 $('settingsBody').addEventListener('click', (e) => {
   if (e.target.closest('[data-midi-toggle]')) {
     setMidi(!S.midi);
+    return;
+  }
+  if (e.target.closest('[data-calibrate]')) {
+    unlock();
+    $('scrimSettings').hidden = true;
+    if (mode !== 'rhythm') setMode('rhythm');
+    rhythm.calibrate();
     return;
   }
   const b = e.target.closest('button[data-k]');

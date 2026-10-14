@@ -13,11 +13,11 @@ export function save() {
   try { localStorage.setItem(LS, JSON.stringify(store)); } catch (e) {}
 }
 
-export const DEF = { clef: 'T', ledger: 2, acc: 0, octave: 0, labels: 'C', names: 'jp', weak: 1, sound: 1, vibe: 1, midi: 0, chord: 1 };
+export const DEF = { clef: 'T', ledger: 2, acc: 0, octave: 0, labels: 'C', names: 'jp', weak: 1, sound: 1, vibe: 1, midi: 0, chord: 1, bpm: 80, measures: 1, latency: 0 };
 /** Current settings (mutated in place). */
 export const S = Object.assign({}, DEF, store.settings || {});
 /** Settings that change the question pool or keyboard range. */
-export const STRUCT = ['clef', 'ledger', 'acc', 'octave', 'chord'];
+export const STRUCT = ['clef', 'ledger', 'acc', 'octave', 'chord', 'measures'];
 
 export function saveSettings() {
   store.settings = Object.assign({}, S);

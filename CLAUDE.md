@@ -10,10 +10,16 @@
 - Vite でビルドする静的サイト。`index.html` はマークアップだけで、CSS と JS は `src/` にある。
   - `theory.js`：音符のモデル、出題範囲、単音・和音の出題の選び方（純粋関数）
   - `judge.js`：正誤判定（和音を含む）、同時に弾いた音をまとめる `ChordCollector`、セッションの集計（純粋関数）
-  - `engrave.js`：和音の符頭・符幹・変化記号の配置（純粋関数） / `staff.js`：五線譜の描画 / `keyboard.js`：画面の鍵盤 / `audio.js`：合成音と振動
+  - `engrave.js`：和音の符頭・符幹・変化記号の配置（純粋関数） / `staff.js`：練習・60 秒モードの五線譜の描画（手書き SVG）
+  - `phrase.js`：リズムのフレーズ生成、小節内の臨時記号、期待される発音時刻（純粋関数）
+  - `timing.js`：演奏とフレーズの照合（音高・タイミングのずれ）、音の遅れの補正値の推定（純粋関数）
+  - `rhythm.js`：リズムモードの画面の流れ / `score.js`：VexFlow でのフレーズの描画（リズムモードに入ったときだけ読み込む）
+  - `metronome.js`：Web Audio でのクリックの予約、音声の時刻と `performance.now()` の換算 / `keyboard.js`：画面の鍵盤 / `audio.js`：合成音と振動
   - `midi-input.js`：電子ピアノからの入力（Web MIDI） / `store.js`：設定と記録 / `version.js`：表示バージョン
   - `main.js`：画面の流れ（出題、モード、設定・記録のシート）
-- 五線譜は SVG を手書きで描画。音部記号・変化記号は Noto Music フォント（Google Fonts）のグリフ。
+- 練習・60 秒モードの五線譜は SVG を手書きで描画（音部記号・変化記号は Noto Music フォントのグリフ）。リズムモードは VexFlow（Bravura フォント）。
+- タイミングはすべて `performance.now()` の時間軸で扱う。MIDI は `MIDIMessageEvent.timeStamp`、画面の鍵盤は pointerdown の `timeStamp`、
+  メトロノームは音声の時刻を換算した値に、ユーザーが測った補正値（`S.latency`）を足して比べる。
 - 音は Web Audio API で合成（外部音源なし）。
 - 設定・記録は localStorage キー `dokufu.v1` に保存。形式を変えるときは移行処理を入れるか、キーのバージョンを上げる。
 

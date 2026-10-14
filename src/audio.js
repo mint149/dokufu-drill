@@ -10,6 +10,12 @@ export function unlock() {
   if (ac && ac.state === 'suspended') ac.resume().catch(() => {});
 }
 
+/** The shared AudioContext (created on first use; call from a user gesture). */
+export function audioContext() {
+  unlock();
+  return ac;
+}
+
 /** A short piano-like tone for MIDI note m. */
 export function playTone(m) {
   if (!ac) return;

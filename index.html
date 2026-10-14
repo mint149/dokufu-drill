@@ -14,10 +14,11 @@
 <body>
 <div class="app">
   <header class="top">
-    <div class="brand"><i>𝄞</i>読譜ドリル</div>
+    <div class="brand"><i>𝄞</i><span>読譜ドリル</span></div>
     <div class="tabs" role="tablist">
       <button id="tabPractice" role="tab" aria-selected="true">練習</button>
       <button id="tabTimed" role="tab" aria-selected="false">60秒</button>
+      <button id="tabRhythm" role="tab" aria-selected="false">リズム</button>
     </div>
     <button class="ghost" id="btnStats">記録</button>
     <button class="ghost" id="btnSettings">設定</button>
@@ -32,10 +33,15 @@
 
   <main class="stage">
     <svg id="staff" viewBox="0 0 260 150" aria-label="五線譜"></svg>
+    <div class="score" id="score" aria-label="五線譜" hidden></div>
     <div class="midi" id="midiBadge" hidden></div>
     <div class="devtag" id="verBadge" hidden></div>
     <div class="fb" id="fb"></div>
     <button class="primary submit" id="submit" hidden>決定</button>
+    <div class="rctl" id="rctl" hidden>
+      <div class="bpm"><button class="ghost" id="bpmDown" aria-label="遅く">−</button><span><b id="bpmVal">80</b><small>BPM</small></span><button class="ghost" id="bpmUp" aria-label="速く">＋</button></div>
+      <div class="btns"><button class="primary" id="rGo">スタート</button><button class="ghost" id="rNext">次へ</button></div>
+    </div>
     <div class="panel" id="panel" hidden></div>
   </main>
 
