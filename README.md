@@ -10,6 +10,7 @@
 - 時間制限なしの練習モードと、60秒チャレンジ（設定ごとに自己ベストを記録）
 - 間違えやすい音の記録と、その音を多めに出す出題
 - 記録はブラウザの localStorage に保存（端末間では共有されない）
+- 電子ピアノを USB でつなぎ、弾いた鍵盤で答える（Web MIDI。Android / PC の Chrome など）
 
 ## 動かし方
 
@@ -24,12 +25,26 @@ python3 -m http.server 8000
 
 ## 公開
 
-`main` ブランチへ push すると、GitHub Actions（`.github/workflows/pages.yml`）が GitHub Pages に公開します。
-初回だけ、リポジトリの Settings → Pages → Build and deployment の Source を「GitHub Actions」にしてください。
+GitHub Actions（`.github/workflows/pages.yml`）が GitHub Pages に公開します。公開されるページは次のとおりです。
+
+| URL | 中身 |
+|---|---|
+| https://mint149.github.io/dokufu-drill/ | 最新のリリース（いちばん新しい `v*` タグ） |
+| https://mint149.github.io/dokufu-drill/next/ | `main` の最新（開発版） |
+| https://mint149.github.io/dokufu-drill/v0.0.1/ など | 各リリースをそのまま固定 |
+
+- `main` に push すると `/next/` が更新されます。トップのページは変わりません。
+- `/next/` で確認して問題なければ、タグを付けて push するとトップのページが新しい版に切り替わります。
+
+```sh
+git tag v0.0.2
+git push origin v0.0.2
+```
+
+設定と記録（localStorage）は全バージョンで共通です。保存形式を変えるときは、古い版でも壊れないように移行処理を入れるかキーのバージョンを上げてください。
 
 ## 今後の予定
 
 - 複数の音・フレーズの出題
 - BPM を指定してのリズム付き演奏
-- 電子ピアノを MIDI（Web MIDI API）でつなぎ、実演奏で判定
 - PWA 化（オフラインでも起動できるように）

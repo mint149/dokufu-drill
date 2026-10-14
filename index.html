@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#2B42AE">
+<!-- Rewritten by .github/build-site.sh at deploy time: release tag (e.g. v0.0.1), "next", or "dev" when opened locally -->
+<meta name="app-version" content="dev">
 <title>読譜ドリル</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -52,6 +54,9 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .brand{margin-right:auto;font-weight:700;font-size:16px;letter-spacing:.06em;display:flex;align-items:baseline;gap:6px}
 .brand i{font-style:normal;font-family:var(--f-music);color:var(--accent);font-size:20px;line-height:1}
+.devtag{position:absolute;top:6px;right:10px;font-size:10px;font-weight:700;letter-spacing:.04em;color:var(--accent);
+  background:var(--accent-soft);padding:2px 7px;border-radius:999px;pointer-events:none}
+.ver{font-size:12px;color:var(--muted);text-align:center;margin:14px 0 0}
 .tabs{display:inline-flex;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:2px}
 .tabs button{border:0;background:transparent;padding:6px 12px;border-radius:999px;font-size:13px;font-weight:500;color:var(--muted)}
 .tabs button[aria-selected="true"]{background:var(--accent);color:var(--on-accent)}
@@ -162,6 +167,7 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   <main class="stage">
     <svg id="staff" viewBox="0 0 260 150" aria-label="五線譜"></svg>
     <div class="midi" id="midiBadge" hidden></div>
+    <div class="devtag" id="verBadge" hidden></div>
     <div class="fb" id="fb"></div>
     <div class="panel" id="panel" hidden></div>
   </main>
@@ -191,6 +197,9 @@ const DOREMI=['ド','レ','ミ','ファ','ソ','ラ','シ'];
 const PC=[0,2,4,5,7,9,11];
 const BOT={T:30,B:18}; // diatonic index of bottom line: E4 / G2
 const LS='dokufu.v1';
+const VER=(document.querySelector('meta[name="app-version"]')||{}).content||'dev';
+const RELEASE=/^v\d/.test(VER);
+const VERN=RELEASE?VER:VER==='next'?'開発版（next）':'ローカル（dev）';
 
 let store={settings:{},notes:{},best:{}};
 try{const r=localStorage.getItem(LS);if(r){const p=JSON.parse(r);store=Object.assign(store,p);}}catch(e){}
@@ -496,7 +505,8 @@ function renderSettings(){
   }</div>${d.help?`<p class="help">${d.help}</p>`:''}</div>`).join('')+
   `<div class="row" id="midiRow"><label>電子ピアノ（MIDI）</label><button class="ghost" data-midi-toggle></button>
    <p class="help midi-st"></p>
-   <p class="help">USB ケーブルで電子ピアノをつなぐと、弾いた鍵盤で答えられます（スマホは OTG アダプタが必要）。</p></div>`;
+   <p class="help">USB ケーブルで電子ピアノをつなぐと、弾いた鍵盤で答えられます（スマホは OTG アダプタが必要）。</p></div>
+  <p class="ver">バージョン ${VERN}</p>`;
   updMidi();
 }
 $('settingsBody').addEventListener('click',e=>{
@@ -599,6 +609,7 @@ $('btnStats').addEventListener('click',()=>{armed=false;renderStats();openSheet(
 document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelectorAll('.scrim').forEach(s=>s.hidden=true);});
 
 /* ---------- boot ---------- */
+if(!RELEASE){$('verBadge').textContent=VER==='next'?'開発版':'dev';$('verBadge').hidden=false;}
 buildPool();buildKb();setMode('practice');
 if(S.midi)connectMidi();
 if(document.fonts&&document.fonts.load){

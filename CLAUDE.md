@@ -12,6 +12,13 @@
 - 音は Web Audio API で合成（外部音源なし）。
 - 設定・記録は localStorage キー `dokufu.v1` に保存。形式を変えるときは移行処理を入れるか、キーのバージョンを上げる。
 
+## 公開とバージョン
+
+- GitHub Pages に Actions で公開する。`.github/build-site.sh` がトップ（最新の `v*` タグ）・`/vX.Y.Z/`（各タグ）・`/next/`（main）を組み立てる。
+- `main` への push は `/next/` だけに反映される。リリースは `vX.Y.Z` タグの push で行う。
+- 表示中のバージョンは `<meta name="app-version">` で、公開時にスクリプトが書き換える（ローカルでは `dev`）。
+- localStorage は全バージョンで共有される。古いリリースが新しい形式のデータで壊れないようにする。
+
 ## 実装上の約束
 
 - 鍵盤の判定は pointerup で行う。pointerdown の時点で判定すると、横スクロールしようとしたタップが誤答扱いになるため。
@@ -22,6 +29,5 @@
 ## 今後の方向性
 
 - 複数音・フレーズの出題、BPM 指定でのタイミング判定
-- Web MIDI API で電子ピアノからの入力を受け付ける（HTTPS 必須。GitHub Pages で満たせる）
 - 機能が増えてきたら、Vite などを使ってファイルを分割する。楽譜描画には VexFlow や OpenSheetMusicDisplay も検討する
 - 判定ロジック（音高・タイミング）は UI から切り離して、単体テストを書く
