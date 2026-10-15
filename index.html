@@ -25,9 +25,9 @@
   </header>
 
   <section class="hud" aria-live="polite">
-    <div class="stat"><span>正解</span><b id="hCorrect">0</b></div>
-    <div class="stat"><span>連続</span><b id="hStreak">0</b></div>
-    <div class="stat"><span>正答率</span><b id="hAcc">–</b></div>
+    <div class="stat"><span id="hL1">正解</span><b id="hCorrect">0</b></div>
+    <div class="stat"><span id="hL2">連続</span><b id="hStreak">0</b></div>
+    <div class="stat"><span id="hL3">正答率</span><b id="hAcc">–</b></div>
     <div class="stat"><span id="hTimeLabel">平均</span><b id="hTime">–</b></div>
   </section>
 
@@ -37,6 +37,7 @@
     <div class="cname" id="cname" aria-live="polite" hidden></div>
     <div class="midi" id="midiBadge" hidden></div>
     <div class="devtag" id="verBadge" hidden></div>
+    <div class="ranks" id="ranks" hidden></div>
     <div class="fb" id="fb"></div>
     <button class="primary submit" id="submit" hidden>決定</button>
     <div class="rctl" id="rctl" hidden>

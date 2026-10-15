@@ -17,7 +17,9 @@ export function save() {
 export const DEF = { clef: 'T', ledger: 2, acc: 0, octave: 0, labels: 'C', names: 'jp', weak: 1, sound: 1, vibe: 1, midi: 0, chord: 1, bpm: 80, measures: 1, latency: 0,
   // Chord names: form 'staff' | 'name', ctype 1–3 (see chords.js QUALITIES), croot 'natural' | 'all',
   // prog: progression id or 'all', ckey 'C' | 'any', harm: beats per chord in progressions.
-  form: 'staff', ctype: 1, croot: 'natural', prog: 'all', ckey: 'C', harm: 4 };
+  form: 'staff', ctype: 1, croot: 'natural', prog: 'all', ckey: 'C', harm: 4,
+  // Rhythm judgement windows: 'strict' | 'normal' | 'easy' (see timing.js JUDGE_WINDOWS).
+  jwin: 'normal' };
 /** Current settings (mutated in place). */
 export const S = Object.assign({}, DEF, store.settings || {});
 /** Settings that change the question pool or keyboard range. */

@@ -181,6 +181,9 @@ attachTapInput($('kb'), $('kbwrap'), onKey);
 
 function hud() {
   if (mode === 'rhythm') return rhythm.hud();
+  $('hL1').textContent = '正解';
+  $('hL2').textContent = '連続';
+  $('hL3').textContent = '正答率';
   $('hCorrect').textContent = ses.first;
   $('hStreak').textContent = ses.streak;
   const acc = accuracy(ses);
@@ -367,6 +370,7 @@ function defs() {
     { k: 'weak', label: '苦手な音を多めに出す', opts: [[1, 'オン'], [0, 'オフ']] },
     { k: 'sound', label: '鍵盤の音', opts: [[1, 'オン'], [0, 'オフ']] },
     { k: 'vibe', label: 'ミスで振動', opts: [[1, 'オン'], [0, 'オフ']], help: '対応していない端末では振動しません' },
+    { k: 'jwin', label: '判定の幅', opts: [['strict', 'きびしい'], ['normal', 'ふつう'], ['easy', 'あまい']], help: 'リズムの PERFECT / GREAT / GOOD になるずれの幅。きびしい ±20 / 40 / 70ms、ふつう ±30 / 60 / 100ms、あまい ±45 / 90 / 150ms。それより大きくずれた音と、音違い・弾き忘れは MISS' },
     { k: 'measures', only: 'staff', label: 'リズムの長さ', opts: [[1, '1小節'], [2, '2小節']], help: 'リズムのタブで出すフレーズの長さ' },
   ];
 }

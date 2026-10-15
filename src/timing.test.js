@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { estimateLatency, grade, judgePerformance } from './timing.js';
+import { JUDGE_WINDOWS, estimateLatency, judgePerformance, matchWindowMs, onsetIndexAt, rankOf } from './timing.js';
 
 const exp = [
   { t: 0, notes: [60] },
@@ -8,11 +8,32 @@ const exp = [
   { t: 1500, notes: [65] },
 ];
 
-describe('grade', () => {
-  it('grades by absolute deviation', () => {
-    expect(grade(-40)).toBe('perfect');
-    expect(grade(60)).toBe('good');
-    expect(grade(-120)).toBe('off');
+describe('rankOf', () => {
+  const w = JUDGE_WINDOWS.normal; // 30 / 60 / 100
+  it('ranks by absolute deviation, inclusive at each limit', () => {
+    expect(rankOf(0, w)).toBe('perfect');
+    expect(rankOf(-30, w)).toBe('perfect');
+    expect(rankOf(31, w)).toBe('great');
+    expect(rankOf(-60, w)).toBe('great');
+    expect(rankOf(100, w)).toBe('good');
+    expect(rankOf(-101, w)).toBe('miss');
+  });
+  it('presets get wider from strict to easy', () => {
+    expect(rankOf(45, JUDGE_WINDOWS.strict)).toBe('good');
+    expect(rankOf(45, JUDGE_WINDOWS.easy)).toBe('perfect');
+  });
+});
+
+describe('matching window', () => {
+  it('covers the GOOD window', () => {
+    expect(matchWindowMs(JUDGE_WINDOWS.normal)).toBe(200);
+    expect(matchWindowMs([60, 150, 300])).toBe(350);
+  });
+  it('finds the onset a note belongs to', () => {
+    expect(onsetIndexAt(exp, -150)).toBe(0);
+    expect(onsetIndexAt(exp, 620)).toBe(1); // 500 and 750 split at 625
+    expect(onsetIndexAt(exp, 630)).toBe(2);
+    expect(onsetIndexAt(exp, 1100)).toBe(-1);
   });
 });
 
@@ -28,8 +49,9 @@ describe('judgePerformance', () => {
     const r = judgePerformance(exp, played, { octave: true });
     expect(r.events.map((e) => e.status)).toEqual(['ok', 'ok', 'ok', 'ok']);
     expect(r.events.map((e) => e.dev)).toEqual([10, -20, 10, 100]);
-    expect(r.events.map((e) => e.grade)).toEqual(['perfect', 'perfect', 'perfect', 'off']);
-    expect(r.summary).toMatchObject({ total: 4, ok: 4, perfect: 3, off: 1, meanDev: 25, meanAbs: 35 });
+    expect(r.events.map((e) => e.rank)).toEqual(['perfect', 'perfect', 'perfect', 'good']);
+    expect(r.summary).toMatchObject({ total: 4, perfect: 3, great: 0, good: 1, miss: 0, meanDev: 25, meanAbs: 35 });
+    expect(r.summary.accuracy).toBeCloseTo(85); // (3 × 100 + 40) / 4
     expect(r.extra).toEqual([]);
   });
   it('wrong pitches, missed onsets and extra notes', () => {
@@ -42,7 +64,8 @@ describe('judgePerformance', () => {
     expect(r.events.map((e) => e.status)).toEqual(['wrong', 'miss', 'wrong', 'miss']);
     expect(r.events[2].missing).toEqual([67]);
     expect(r.extra).toEqual([{ t: 1100, note: 70 }]);
-    expect(r.summary).toMatchObject({ ok: 0, wrong: 2, miss: 2, meanDev: null });
+    expect(r.events.map((e) => e.rank)).toEqual(['miss', 'miss', 'miss', 'miss']);
+    expect(r.summary).toMatchObject({ miss: 4, wrong: 2, unplayed: 2, accuracy: 0, meanDev: null });
   });
   it('windows shrink to half the gap so close onsets do not steal notes', () => {
     // 500 → 750 is 250 ms apart: a note at 630 belongs to 500 (130 after), one at 640 to 750.
@@ -52,7 +75,17 @@ describe('judgePerformance', () => {
   });
   it('notes before the first beat can still count as early', () => {
     const r = judgePerformance(exp, [{ t: -60, note: 60 }], { octave: true });
-    expect(r.events[0]).toMatchObject({ status: 'ok', dev: -60, grade: 'good' });
+    expect(r.events[0]).toMatchObject({ status: 'ok', dev: -60, rank: 'great' });
+  });
+  it('right notes too far off are a MISS but keep their deviation', () => {
+    const r = judgePerformance([{ t: 0, notes: [60] }], [{ t: 160, note: 60 }], { octave: true });
+    expect(r.events[0]).toMatchObject({ status: 'ok', rank: 'miss', dev: 160 });
+    expect(r.summary.meanDev).toBe(160);
+  });
+  it('the judgement windows can be changed', () => {
+    const played = [{ t: 45, note: 60 }];
+    const at = (w) => judgePerformance([{ t: 0, notes: [60] }], played, { octave: true, windows: JUDGE_WINDOWS[w] }).events[0].rank;
+    expect([at('strict'), at('normal'), at('easy')]).toEqual(['good', 'great', 'perfect']);
   });
   it('note-name judging ignores the octave', () => {
     const r = judgePerformance([{ t: 0, notes: [60] }], [{ t: 0, note: 72 }], { octave: false });
