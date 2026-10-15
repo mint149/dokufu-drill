@@ -69,5 +69,17 @@ export function expectedOnsets(phrase, bpm) {
   return phrase.events.filter((e) => !e.rest).map((e) => ({ t: e.beat * beatMs, notes: e.notes.map(midiOf) }));
 }
 
+/**
+ * What the model performance plays: [{index: event index, t: onset ms, dur: length ms, notes: MIDI numbers}]
+ * for every sounding event. Each note is held for its written length.
+ */
+export function phraseTones(phrase, bpm) {
+  const beatMs = 60000 / bpm;
+  return phrase.events
+    .map((e, index) => ({ e, index }))
+    .filter(({ e }) => !e.rest)
+    .map(({ e, index }) => ({ index, t: e.beat * beatMs, dur: e.dur * beatMs, notes: e.notes.map(midiOf) }));
+}
+
 /** Length of the phrase in ms. */
 export const phraseMs = (phrase, bpm) => (phrase.measures * phrase.beats * 60000) / bpm;

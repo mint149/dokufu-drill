@@ -16,18 +16,24 @@ export function audioContext() {
   return ac;
 }
 
-/** A short piano-like tone for MIDI note m. */
-export function playTone(m) {
-  if (!ac) return;
-  const f = 440 * Math.pow(2, (m - 69) / 12), t = ac.currentTime;
+/**
+ * A piano-like tone for MIDI note m. Without options it sounds now and decays over 1.5 s.
+ * at: audio time (s) to start; dur: held length (s) before release; vol: peak gain.
+ * Returns {stop()} to cut it (e.g. when a scheduled demo is cancelled), or null without audio.
+ */
+export function playTone(m, { at, dur, vol = 0.3 } = {}) {
+  if (!ac) return null;
+  const f = 440 * Math.pow(2, (m - 69) / 12), t = at ?? ac.currentTime;
+  const end = dur == null ? t + 1.5 : t + dur + 0.12;
   const out = ac.createGain();
   out.gain.setValueAtTime(0.0001, t);
-  out.gain.exponentialRampToValueAtTime(0.3, t + 0.008);
-  out.gain.exponentialRampToValueAtTime(0.0001, t + 1.5);
+  out.gain.exponentialRampToValueAtTime(vol, t + 0.008);
+  if (dur != null) out.gain.exponentialRampToValueAtTime(vol * 0.4, t + Math.max(0.02, dur));
+  out.gain.exponentialRampToValueAtTime(0.0001, end);
   const lp = ac.createBiquadFilter();
   lp.type = 'lowpass';
   lp.frequency.value = Math.min(9000, f * 7);
-  [['triangle', 1, 1], ['sine', 2, 0.32], ['sine', 3, 0.1]].forEach(([ty, mul, amp]) => {
+  const oscs = [['triangle', 1, 1], ['sine', 2, 0.32], ['sine', 3, 0.1]].map(([ty, mul, amp]) => {
     const o = ac.createOscillator(), og = ac.createGain();
     o.type = ty;
     o.frequency.value = f * mul;
@@ -35,10 +41,18 @@ export function playTone(m) {
     o.connect(og);
     og.connect(lp);
     o.start(t);
-    o.stop(t + 1.6);
+    o.stop(end + 0.1);
+    return o;
   });
   lp.connect(out);
   out.connect(ac.destination);
+  return {
+    stop() {
+      oscs.forEach((o) => {
+        try { o.stop(); } catch (e) {}
+      });
+    },
+  };
 }
 
 export function vibrate() {

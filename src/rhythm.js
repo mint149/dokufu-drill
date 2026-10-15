@@ -1,8 +1,9 @@
 // Rhythm mode: count in, play a short phrase with the metronome, then see pitch and timing per note.
+// お手本 plays the phrase itself the same way, highlighting each note as it sounds.
 import { S, saveSettings } from './store.js';
-import { audioContext } from './audio.js';
+import { audioContext, playTone } from './audio.js';
 import { perfTimeOf, scheduleClicks } from './metronome.js';
-import { expectedOnsets, makePhrase, phraseMs } from './phrase.js';
+import { expectedOnsets, makePhrase, phraseMs, phraseTones } from './phrase.js';
 import { WINDOW_MS, estimateLatency, judgePerformance } from './timing.js';
 
 export const BPM_MIN = 40, BPM_MAX = 200;
@@ -18,7 +19,8 @@ const signed = (ms) => (ms > 0 ? '+' : ms < 0 ? '−' : '±') + Math.abs(Math.ro
 export function createRhythmMode({ $, getPool, weightOf, setFb }) {
   let score = null; // lazily imported score.js
   let phrase = null, state = 'idle', marks = [];
-  let played = [], taps = [], heard = [], phraseStart = 0, clicks = null, timers = [], wake = null;
+  let played = [], taps = [], heard = [], phraseStart = 0, clicks = null, tones = [], timers = [], wake = null;
+  let beforeDemo = null; // screen to restore after the model performance
   let ses = { notes: 0, ok: 0, streak: 0, lastAbs: null };
   let active = false, loading = Promise.resolve();
 
@@ -28,7 +30,10 @@ export function createRhythmMode({ $, getPool, weightOf, setFb }) {
     timers = [];
     if (clicks) clicks.stop();
     clicks = null;
+    tones.forEach((t) => t.stop());
+    tones = [];
   }
+  const busy = () => state === 'count' || state === 'play' || state === 'calib' || state === 'demo';
 
   /* ---------- screen ---------- */
   function render() {
@@ -36,12 +41,13 @@ export function createRhythmMode({ $, getPool, weightOf, setFb }) {
     score.drawPhrase($('score'), phrase, { ink: cssVar('--ink'), marks });
   }
   function controls() {
-    const busy = state === 'count' || state === 'play' || state === 'calib';
+    const b = busy();
     $('bpmVal').textContent = S.bpm;
-    $('bpmDown').disabled = busy || S.bpm <= BPM_MIN;
-    $('bpmUp').disabled = busy || S.bpm >= BPM_MAX;
-    $('rGo').textContent = busy ? 'やめる' : state === 'result' ? 'もう一度' : 'スタート';
-    $('rNext').hidden = busy;
+    $('bpmDown').disabled = b || S.bpm <= BPM_MIN;
+    $('bpmUp').disabled = b || S.bpm >= BPM_MAX;
+    $('rGo').textContent = b ? 'やめる' : state === 'result' ? 'もう一度' : 'スタート';
+    $('rDemo').hidden = b;
+    $('rNext').hidden = b;
   }
   function hud() {
     $('hCorrect').textContent = ses.ok;
@@ -66,7 +72,7 @@ export function createRhythmMode({ $, getPool, weightOf, setFb }) {
   }
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && state !== 'idle') keepAwake();
-    if (document.visibilityState === 'hidden' && (state === 'count' || state === 'play')) cancel();
+    if (document.visibilityState === 'hidden' && (state === 'count' || state === 'play' || state === 'demo')) cancel();
   });
 
   /* ---------- flow ---------- */
@@ -105,6 +111,7 @@ export function createRhythmMode({ $, getPool, weightOf, setFb }) {
     controls();
   }
   function cancel() {
+    if (state === 'demo') return endDemo();
     stopAll();
     state = phrase ? 'ready' : 'idle';
     setFb('');
@@ -140,6 +147,47 @@ export function createRhythmMode({ $, getPool, weightOf, setFb }) {
     setFb(text, s.ok === s.total && !res.extra.length ? 'ok' : s.ok ? '' : 'ng');
     controls();
     hud();
+  }
+
+  /* ---------- model performance ---------- */
+  function demo() {
+    const ac = audioContext();
+    if (!ac) return setFb('この端末では音を出せません', 'ng');
+    stopAll();
+    beforeDemo = { state, marks, fb: $('fb').textContent, cls: $('fb').className.replace(/\bfb\b/, '').trim() };
+    state = 'demo';
+    marks = [];
+    render();
+    const beatS = 60 / S.bpm, t0 = ac.currentTime + 0.3;
+    const n = COUNT_IN + phrase.measures * phrase.beats;
+    const times = Array.from({ length: n }, (_, i) => t0 + i * beatS);
+    clicks = scheduleClicks(ac, times, new Set(times.map((_, i) => i).filter((i) => i % phrase.beats === 0)));
+    const lead = t0 + COUNT_IN * beatS, list = phraseTones(phrase, S.bpm);
+    tones = list
+      .flatMap((x) =>
+        x.notes.map((m) => playTone(m, { at: lead + x.t / 1000, dur: (x.dur / 1000) * 0.92, vol: 0.3 / Math.sqrt(x.notes.length) }))
+      )
+      .filter(Boolean);
+    // Highlight each note when it is heard (no latency correction: that is for the player's input).
+    const base = perfTimeOf(ac, t0), beatMs = beatS * 1000, now = performance.now(), accent = cssVar('--accent');
+    for (let i = 0; i < COUNT_IN; i++) later(base + i * beatMs - now, () => setFb(`${i + 1}`));
+    list.forEach((x) =>
+      later(base + COUNT_IN * beatMs + x.t - now, () => {
+        marks = phrase.events.map((_, j) => (j === x.index ? { color: accent } : null));
+        render();
+        setFb('お手本');
+      })
+    );
+    later(base + COUNT_IN * beatMs + phraseMs(phrase, S.bpm) + 200 - now, endDemo);
+    setFb('');
+    controls();
+  }
+  function endDemo() {
+    stopAll();
+    ({ state, marks } = beforeDemo);
+    render();
+    setFb(beforeDemo.fb, beforeDemo.cls);
+    controls();
   }
 
   /* ---------- latency calibration ---------- */
@@ -181,11 +229,9 @@ export function createRhythmMode({ $, getPool, weightOf, setFb }) {
     else if (state === 'calib') taps.push(t);
   }
 
-  $('rGo').addEventListener('click', () => {
-    if (state === 'count' || state === 'play' || state === 'calib') cancel();
-    else start();
-  });
+  $('rGo').addEventListener('click', () => (busy() ? cancel() : start()));
   $('rNext').addEventListener('click', newPhrase);
+  $('rDemo').addEventListener('click', demo);
   const stepBpm = (d) => {
     S.bpm = Math.min(BPM_MAX, Math.max(BPM_MIN, S.bpm + d));
     saveSettings();

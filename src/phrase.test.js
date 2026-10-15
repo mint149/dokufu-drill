@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildPool } from './theory.js';
-import { displayAccidentals, expectedOnsets, makePhrase, phraseMs } from './phrase.js';
+import { displayAccidentals, expectedOnsets, makePhrase, phraseMs, phraseTones } from './phrase.js';
 
 // Deterministic pseudo-random sequence.
 const seeded = (seed) => () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
@@ -48,23 +48,30 @@ describe('displayAccidentals', () => {
   });
 });
 
-describe('expectedOnsets / phraseMs', () => {
+describe('expectedOnsets / phraseTones / phraseMs', () => {
+  const p = {
+    beats: 4,
+    measures: 1,
+    events: [
+      { beat: 0, dur: 0.5, rest: false, notes: [{ d: 28, acc: 0 }] },
+      { beat: 0.5, dur: 0.5, rest: false, notes: [{ d: 30, acc: 0 }, { d: 32, acc: 0 }] },
+      { beat: 1, dur: 1, rest: true, notes: [] },
+      { beat: 2, dur: 2, rest: false, notes: [{ d: 29, acc: 1 }] },
+    ],
+  };
   it('converts beats to ms and skips rests', () => {
-    const p = {
-      beats: 4,
-      measures: 1,
-      events: [
-        { beat: 0, dur: 0.5, rest: false, notes: [{ d: 28, acc: 0 }] },
-        { beat: 0.5, dur: 0.5, rest: false, notes: [{ d: 30, acc: 0 }, { d: 32, acc: 0 }] },
-        { beat: 1, dur: 1, rest: true, notes: [] },
-        { beat: 2, dur: 2, rest: false, notes: [{ d: 29, acc: 1 }] },
-      ],
-    };
     expect(expectedOnsets(p, 120)).toEqual([
       { t: 0, notes: [60] },
       { t: 250, notes: [64, 67] },
       { t: 1000, notes: [63] },
     ]);
     expect(phraseMs(p, 120)).toBe(2000);
+  });
+  it('the model performance holds each note for its written length and keeps event indices', () => {
+    expect(phraseTones(p, 120)).toEqual([
+      { index: 0, t: 0, dur: 250, notes: [60] },
+      { index: 1, t: 250, dur: 250, notes: [64, 67] },
+      { index: 3, t: 1000, dur: 1000, notes: [63] },
+    ]);
   });
 });
