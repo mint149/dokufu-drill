@@ -1,10 +1,13 @@
 // Rhythm mode: count in, play a short phrase with the metronome, then see pitch and timing per note.
 // お手本 plays the phrase itself the same way, highlighting each note as it sounds.
+// In the chord-name form the phrase is a chord progression shown as a chord chart.
 import { S, saveSettings } from './store.js';
 import { audioContext, playTone } from './audio.js';
 import { perfTimeOf, scheduleClicks } from './metronome.js';
 import { expectedOnsets, makePhrase, phraseMs, phraseTones } from './phrase.js';
 import { WINDOW_MS, estimateLatency, judgePerformance } from './timing.js';
+import { makeProgression } from './chords.js';
+import { drawChart } from './chart.js';
 
 export const BPM_MIN = 40, BPM_MAX = 200;
 const COUNT_IN = 4; // beats
@@ -15,8 +18,9 @@ const signed = (ms) => (ms > 0 ? '+' : ms < 0 ? '−' : '±') + Math.abs(Math.ro
 
 /**
  * $: element lookup. getPool(): current question pool. weightOf(note): pick weight. setFb(text, cls): feedback line.
+ * isName(): whether the chord-name form is on (progressions instead of notated phrases).
  */
-export function createRhythmMode({ $, getPool, weightOf, setFb }) {
+export function createRhythmMode({ $, getPool, weightOf, setFb, isName }) {
   let score = null; // lazily imported score.js
   let phrase = null, state = 'idle', marks = [];
   let played = [], taps = [], heard = [], phraseStart = 0, clicks = null, tones = [], timers = [], wake = null;
@@ -37,8 +41,15 @@ export function createRhythmMode({ $, getPool, weightOf, setFb }) {
 
   /* ---------- screen ---------- */
   function render() {
-    if (!score || !phrase) return;
-    score.drawPhrase($('score'), phrase, { ink: cssVar('--ink'), marks });
+    if (!phrase) return;
+    if (phrase.kind === 'chords') drawChart($('score'), phrase, { marks });
+    else if (score) score.drawPhrase($('score'), phrase, { ink: cssVar('--ink'), marks });
+  }
+  /** Light event i (or nothing) in the accent color, e.g. the chord being played. */
+  function highlight(i) {
+    const accent = cssVar('--accent');
+    marks = phrase.events.map((_, j) => (j === i ? { color: accent } : null));
+    render();
   }
   function controls() {
     const b = busy();
@@ -78,7 +89,9 @@ export function createRhythmMode({ $, getPool, weightOf, setFb }) {
   /* ---------- flow ---------- */
   function newPhrase() {
     stopAll();
-    phrase = makePhrase({ pool: getPool(), measures: S.measures, size: S.chord, weightOf });
+    phrase = isName()
+      ? makeProgression({ prog: S.prog, key: S.ckey, seventh: S.ctype >= 3, beatsPerChord: S.harm })
+      : makePhrase({ pool: getPool(), measures: S.measures, size: S.chord, weightOf });
     marks = [];
     state = 'ready';
     render();
@@ -106,6 +119,9 @@ export function createRhythmMode({ $, getPool, weightOf, setFb }) {
       state = 'play';
       setFb('♪');
     });
+    // In a chord chart, follow along: light each chord when its beat is heard.
+    if (phrase.kind === 'chords')
+      expectedOnsets(phrase, S.bpm).forEach((x, i) => later(base + COUNT_IN * beatMs + x.t - now, () => highlight(i)));
     later(phraseStart + phraseMs(phrase, S.bpm) + WINDOW_MS + 100 - now, finish);
     setFb('');
     controls();
@@ -119,7 +135,8 @@ export function createRhythmMode({ $, getPool, weightOf, setFb }) {
   }
   function finish() {
     stopAll();
-    const res = judgePerformance(expectedOnsets(phrase, S.bpm), played, { octave: S.octave });
+    // Chord names have no octave: any voicing counts.
+    const res = judgePerformance(expectedOnsets(phrase, S.bpm), played, { octave: phrase.kind === 'chords' ? false : S.octave });
     const c = { ok: cssVar('--ok'), warn: cssVar('--warn'), ng: cssVar('--ng'), muted: cssVar('--muted') };
     let k = 0;
     marks = phrase.events.map((e) => {
@@ -169,12 +186,11 @@ export function createRhythmMode({ $, getPool, weightOf, setFb }) {
       )
       .filter(Boolean);
     // Highlight each note when it is heard (no latency correction: that is for the player's input).
-    const base = perfTimeOf(ac, t0), beatMs = beatS * 1000, now = performance.now(), accent = cssVar('--accent');
+    const base = perfTimeOf(ac, t0), beatMs = beatS * 1000, now = performance.now();
     for (let i = 0; i < COUNT_IN; i++) later(base + i * beatMs - now, () => setFb(`${i + 1}`));
     list.forEach((x) =>
       later(base + COUNT_IN * beatMs + x.t - now, () => {
-        marks = phrase.events.map((_, j) => (j === x.index ? { color: accent } : null));
-        render();
+        highlight(x.index);
         setFb('お手本');
       })
     );
@@ -266,7 +282,7 @@ export function createRhythmMode({ $, getPool, weightOf, setFb }) {
       hud();
       keepAwake();
       loading = (async () => {
-        if (!score) {
+        if (!score && !isName()) {
           setFb('楽譜を読み込んでいます…');
           score = await import('./score.js');
           await score.ready;

@@ -9,6 +9,7 @@ import { attachTapInput, buildKeyboard, clearMarks, flash, keyForMidi } from './
 import { playTone, unlock, vibrate } from './audio.js';
 import { createMidiInput } from './midi-input.js';
 import { createRhythmMode } from './rhythm.js';
+import { PROGRESSIONS, chordPool, pickChordName } from './chords.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -17,13 +18,31 @@ let mode = 'practice', running = false, endAt = 0, timer = null;
 let ses = newSession();
 let kbRange = { lo: 60, hi: 71 };
 let collector = new ChordCollector(1), flushTimer = null;
+let names = []; // chord-name questions for the current settings
+
+/** Chord-name form: questions are chord symbols instead of notes on the staff. */
+const isName = () => S.form === 'name';
+/** A chord name may be played with doubled notes in any voicing, so MIDI waits this long for the rest of it. */
+const NAME_WINDOW_MS = 300;
 
 const nm = (n, withOct) => noteName(n, S.names, withOct);
-const draw = () => drawStaff($('staff'), S.clef, cur);
+function draw() {
+  const asName = isName() && mode !== 'rhythm';
+  $('staff').toggleAttribute('hidden', mode === 'rhythm' || asName); // an SVG element has no .hidden property
+  $('cname').hidden = !asName;
+  if (asName) {
+    $('cname').textContent = cur ? cur.chord.name : '';
+    $('cname').classList.toggle('ng', !!(cur && cur.missed));
+  } else if (mode !== 'rhythm') drawStaff($('staff'), S.clef, cur);
+}
 
 function rebuildPool() {
   pool = buildPool(S);
+  names = chordPool(S.ctype, S.croot);
 }
+/** Target notes of the current question, and whether the octave matters. */
+const targetsOf = (q) => (q.chord ? q.chord.midis : q.notes.map(midiOf));
+const octaveOf = (q) => (q.chord ? false : S.octave);
 function rebuildKeyboard() {
   kbRange = buildKeyboard($('kb'), $('kbwrap'), { pool, octave: S.octave, labels: S.labels, names: S.names });
 }
@@ -34,10 +53,16 @@ function setFb(t, cls) {
   f.textContent = t;
   f.className = 'fb' + (cls ? ' ' + cls : '');
 }
-/* cur: {st, notes (low to high), id, missed, missIds: ids of notes that were missing in a wrong answer, fresh} */
+/*
+ * cur: {st, notes (low to high), id, missed, missIds: ids of notes that were missing in a wrong answer, fresh}
+ * or, in the chord-name form, {chord (see chords.js makeChord), id, missed, missIds, fresh}.
+ */
 function next() {
   clearMarks();
-  cur = pickChord(pool, S.chord, lastId, (n) => (S.weak ? noteWeight(store.notes[n.id]) : 1));
+  if (isName()) {
+    const chord = pickChordName(names, lastId, (c) => (S.weak ? noteWeight(store.chordStats[c.id]) : 1));
+    cur = { chord, id: chord.id };
+  } else cur = pickChord(pool, S.chord, lastId, (n) => (S.weak ? noteWeight(store.notes[n.id]) : 1));
   cur.missed = false;
   cur.missIds = new Set();
   cur.fresh = true;
@@ -49,15 +74,17 @@ function next() {
   draw();
   setFb('');
 }
-const updSubmit = () => ($('submit').hidden = !cur || S.chord < 2);
+const multi = () => isName() || S.chord > 1;
+const updSubmit = () => ($('submit').hidden = !cur || !multi());
 const chordName = (notes) => notes.map((n) => nm(n, true)).join('・');
+const toneList = (c) => c.tones.join('・');
 
 function onKey(el, t) {
   const m = +el.dataset.midi;
   unlock();
   if (S.sound) playTone(m);
   if (mode === 'rhythm') return rhythm.onNote(m, t);
-  if (S.chord > 1) {
+  if (multi()) {
     // Chords: taps select keys, 決定 submits them.
     if (!locked) el.classList.toggle('sel');
     return;
@@ -74,13 +101,15 @@ function submitSelection() {
 /* MIDI notes played together count as one answer (a single note answers at once). */
 function resetCollector() {
   clearTimeout(flushTimer);
-  collector = new ChordCollector(cur ? cur.notes.length : 1);
+  collector = cur && cur.chord ? new ChordCollector(Infinity, NAME_WINDOW_MS) : new ChordCollector(cur ? cur.notes.length : 1);
 }
 function collectNote(note, el) {
   if (locked || !cur) return;
   const group = collector.add(note, performance.now());
   clearTimeout(flushTimer);
   if (group) return answerNotes(group);
+  // A chord name answers as soon as the notes so far make the chord.
+  if (cur.chord && judgeChord(collector.notes, targetsOf(cur), false).ok) return answerNotes(collector.flush());
   flushTimer = setTimeout(() => answerNotes(collector.flush()), collector.deadline() - performance.now());
 }
 function answerNotes(notes) {
@@ -91,15 +120,16 @@ function answerNotes(notes) {
 function answer(played, els) {
   if (locked || !cur) return;
   if (mode === 'timed' && !running) return;
-  const targets = cur.notes.map(midiOf);
-  const r = judgeChord(played, targets, S.octave);
-  const single = cur.notes.length === 1;
+  const targets = targetsOf(cur), oct = octaveOf(cur);
+  const r = judgeChord(played, targets, oct);
+  const single = !cur.chord && cur.notes.length === 1;
   if (r.ok) {
     els.forEach((el) => el && flash(el, 'ok'));
     scoreCorrect(ses, { missed: cur.missed, rt: performance.now() - shownAt });
-    cur.notes.forEach((n) => recordNote(store.notes, n.id, cur.missIds.has(n.id)));
+    if (cur.chord) recordNote(store.chordStats, cur.id, cur.missed);
+    else cur.notes.forEach((n) => recordNote(store.notes, n.id, cur.missIds.has(n.id)));
     save();
-    setFb(chordName(cur.notes) + '  ✓', 'ok');
+    setFb(cur.chord ? `${cur.chord.name}  ✓（${toneList(cur.chord)}）` : chordName(cur.notes) + '  ✓', 'ok');
     locked = true;
     hud();
     setTimeout(() => {
@@ -112,9 +142,10 @@ function answer(played, els) {
     if (els[i] && r.extra.includes(m)) flash(els[i], 'ng', 320);
   });
   if (S.vibe) vibrate();
-  cur.notes.forEach((n) => {
-    if (r.missing.includes(midiOf(n))) cur.missIds.add(n.id);
-  });
+  if (!cur.chord)
+    cur.notes.forEach((n) => {
+      if (r.missing.includes(midiOf(n))) cur.missIds.add(n.id);
+    });
   if (!cur.missed) {
     cur.missed = true;
     scoreMiss(ses);
@@ -122,13 +153,20 @@ function answer(played, els) {
   }
   let first = null;
   document.querySelectorAll('.key').forEach((k) => {
-    if (targets.some((t) => isMatch(+k.dataset.midi, t, S.octave))) {
+    if (targets.some((t) => isMatch(+k.dataset.midi, t, oct))) {
       k.classList.add('hint');
       first = first || k;
     }
   });
   if (first && S.octave) first.scrollIntoView({ inline: 'nearest', block: 'nearest' });
-  if (single) setFb('正解は ' + nm(cur.notes[0], true) + '　光っている鍵盤で次へ', 'ng');
+  if (cur.chord) {
+    const c = cur.chord, pc = (m) => ((m % 12) + 12) % 12, detail = [];
+    const miss = c.tones.filter((_, i) => r.missing.some((m) => pc(m) === c.pcs[i]));
+    const extra = [...new Set(r.extra.map((m) => midiName(m, 'en', false)))];
+    if (miss.length) detail.push('足りない音 ' + miss.join('・'));
+    if (extra.length) detail.push('余分な音 ' + extra.join('・'));
+    setFb(`${c.name} は ${toneList(c)}（${detail.join('、')}）`, 'ng');
+  } else if (single) setFb('正解は ' + nm(cur.notes[0], true) + '　光っている鍵盤で次へ', 'ng');
   else {
     const detail = [];
     const miss = cur.notes.filter((n) => r.missing.includes(midiOf(n)));
@@ -160,12 +198,19 @@ function hud() {
 
 /* ---------- modes ---------- */
 const CLEFN = { T: 'ト音記号', B: 'ヘ音記号', G: '大譜表' };
-// Single-note bests stay in store.best with the v0.0.x key format; chord bests go to store.bestChord.
-const bestStore = () => (S.chord > 1 ? store.bestChord : store.best);
-const comboKey = () => `${S.clef}-${S.ledger}-${S.acc}-${S.octave}` + (S.chord > 1 ? `-${S.chord}` : '');
+const CTYPEN = { 1: 'メジャー・マイナー', 2: '三和音すべて', 3: 'セブンスまで' };
+const nameText = (ctype, croot) => `コード名・${CTYPEN[ctype]}・ルート${croot === 'natural' ? '白鍵のみ' : 'すべて'}`;
+// Single-note bests stay in store.best with the v0.0.x key format; chord bests go to store.bestChord,
+// chord-name bests to store.bestName.
+const bestStore = () => (isName() ? store.bestName : S.chord > 1 ? store.bestChord : store.best);
+const unit = () => (isName() ? '個' : '音');
+const comboKey = () =>
+  isName() ? `${S.ctype}-${S.croot}` : `${S.clef}-${S.ledger}-${S.acc}-${S.octave}` + (S.chord > 1 ? `-${S.chord}` : '');
 const comboText = () =>
-  `${CLEFN[S.clef]}・加線${S.ledger ? S.ledger + '本まで' : 'なし'}・♯♭${S.acc ? 'あり' : 'なし'}・${S.octave ? '高さまで判定' : '音名だけ判定'}` +
-  (S.chord > 1 ? `・${S.chord}音の和音` : '');
+  isName()
+    ? nameText(S.ctype, S.croot)
+    : `${CLEFN[S.clef]}・加線${S.ledger ? S.ledger + '本まで' : 'なし'}・♯♭${S.acc ? 'あり' : 'なし'}・${S.octave ? '高さまで判定' : '音名だけ判定'}` +
+      (S.chord > 1 ? `・${S.chord}音の和音` : '');
 function showPanel(html) {
   const p = $('panel');
   p.innerHTML = '<div class="inner">' + html + '</div>';
@@ -176,8 +221,8 @@ function hidePanel() {
 }
 function showStart() {
   const b = bestStore()[comboKey()];
-  showPanel(`<p class="eyebrow">60秒チャレンジ</p><h2>60秒で何音読めるか</h2><p class="combo">${comboText()}</p>
-    ${b != null ? `<span class="badge">自己ベスト ${b}音</span>` : ''}
+  showPanel(`<p class="eyebrow">60秒チャレンジ</p><h2>60秒で${isName() ? 'いくつ弾けるか' : '何音読めるか'}</h2><p class="combo">${comboText()}</p>
+    ${b != null ? `<span class="badge">自己ベスト ${b}${unit()}</span>` : ''}
     <div class="btns"><button class="primary" id="goTimed">スタート</button></div>`);
   $('goTimed').addEventListener('click', startTimed);
 }
@@ -212,10 +257,10 @@ function finishTimed() {
     isNew = prev != null || ses.first > 0;
   }
   const a = avgSeconds(ses);
-  showPanel(`<p class="eyebrow">結果</p><p class="big">${ses.first}<small>音</small></p>
+  showPanel(`<p class="eyebrow">結果</p><p class="big">${ses.first}<small>${unit()}</small></p>
     ${isNew ? '<span class="badge">自己ベスト更新</span>' : ''}
     <div class="res-grid"><span>正答率</span><span>平均</span><span>ベスト</span>
-    <b>${accuracy(ses) ?? 0}%</b><b>${a == null ? '–' : a.toFixed(2) + '秒'}</b><b>${best[k]}音</b></div>
+    <b>${accuracy(ses) ?? 0}%</b><b>${a == null ? '–' : a.toFixed(2) + '秒'}</b><b>${best[k]}${unit()}</b></div>
     <p class="combo">${comboText()}</p>
     <div class="btns"><button class="primary" id="again">もう一度</button><button class="ghost" id="toPractice">練習に戻る</button></div>`);
   $('again').addEventListener('click', startTimed);
@@ -226,6 +271,7 @@ const rhythm = createRhythmMode({
   getPool: () => pool,
   weightOf: (n) => (S.weak ? noteWeight(store.notes[n.id]) : 1),
   setFb,
+  isName,
 });
 function setMode(m) {
   if (mode === 'rhythm') rhythm.exit();
@@ -236,11 +282,11 @@ function setMode(m) {
   $('tabPractice').setAttribute('aria-selected', m === 'practice');
   $('tabTimed').setAttribute('aria-selected', m === 'timed');
   $('tabRhythm').setAttribute('aria-selected', m === 'rhythm');
-  $('staff').toggleAttribute('hidden', m === 'rhythm'); // an SVG element has no .hidden property
   if (m === 'rhythm') {
     cur = null;
     updSubmit();
     clearMarks();
+    draw();
     hidePanel();
     setFb('');
     hud();
@@ -305,22 +351,29 @@ function updMidi() {
 /* ---------- settings sheet ---------- */
 function defs() {
   return [
-    { k: 'clef', label: '音部記号', opts: [['T', 'ト音'], ['B', 'ヘ音'], ['G', '大譜表']] },
-    { k: 'chord', label: '出題', opts: [[1, '単音'], [2, '2音'], [3, '3音']], help: '和音は同じ段の 7 度以内から出ます。電子ピアノでは同時に弾き、画面の鍵盤では選んでから「決定」を押します' },
-    { k: 'ledger', label: '加線', opts: [[0, 'なし'], [1, '1本'], [2, '2本'], [3, '3本']], help: '五線の外に出る音を何本目の加線まで出すか' },
-    { k: 'acc', label: '♯・♭', opts: [[0, 'なし'], [1, 'あり']] },
-    { k: 'octave', label: '判定', opts: [[0, '音名だけ'], [1, '高さまで']], help: '「高さまで」は鍵盤が数オクターブに広がり、横にスクロールして弾きます' },
+    { k: 'form', label: '形式', opts: [['staff', '楽譜'], ['name', 'コード名']], help: 'コード名では、表示されたコードの構成音を弾きます（転回・オクターブ・音の重ねは自由）。リズムのタブはコード進行になります' },
+    { k: 'ctype', only: 'name', label: 'コードの種類', opts: [[1, 'メジャー・マイナー'], [2, '三和音すべて'], [3, 'セブンスまで']], help: '「三和音すべて」は dim・aug・sus4、「セブンスまで」は 7・M7・m7・m7(♭5)・dim7・6・m6・7sus4 も出ます。コード進行ではセブンスにするかどうかに使います' },
+    { k: 'croot', only: 'name', label: 'ルート', opts: [['natural', '白鍵のみ'], ['all', 'すべて']] },
+    { k: 'prog', only: 'name', label: 'コード進行', opts: [['all', 'おまかせ'], ...PROGRESSIONS.map((p) => [p.id, p.name])], help: 'リズムのタブで弾く進行' },
+    { k: 'ckey', only: 'name', label: 'キー', opts: [['C', 'C のみ'], ['any', 'いろいろ']] },
+    { k: 'harm', only: 'name', label: 'コードの長さ', opts: [[4, '1小節'], [2, '2拍']], help: 'コード進行で、1つのコードを何拍弾くか' },
+    { k: 'clef', only: 'staff', label: '音部記号', opts: [['T', 'ト音'], ['B', 'ヘ音'], ['G', '大譜表']] },
+    { k: 'chord', only: 'staff', label: '出題', opts: [[1, '単音'], [2, '2音'], [3, '3音']], help: '和音は同じ段の 7 度以内から出ます。電子ピアノでは同時に弾き、画面の鍵盤では選んでから「決定」を押します' },
+    { k: 'ledger', only: 'staff', label: '加線', opts: [[0, 'なし'], [1, '1本'], [2, '2本'], [3, '3本']], help: '五線の外に出る音を何本目の加線まで出すか' },
+    { k: 'acc', only: 'staff', label: '♯・♭', opts: [[0, 'なし'], [1, 'あり']] },
+    { k: 'octave', only: 'staff', label: '判定', opts: [[0, '音名だけ'], [1, '高さまで']], help: '「高さまで」は鍵盤が数オクターブに広がり、横にスクロールして弾きます' },
     { k: 'labels', label: '鍵盤の文字', opts: [['N', 'なし'], ['C', S.names === 'jp' ? 'ドだけ' : 'Cだけ'], ['A', 'すべて']] },
     { k: 'names', label: '音名', opts: [['jp', 'ドレミ'], ['en', 'CDE']] },
     { k: 'weak', label: '苦手な音を多めに出す', opts: [[1, 'オン'], [0, 'オフ']] },
     { k: 'sound', label: '鍵盤の音', opts: [[1, 'オン'], [0, 'オフ']] },
     { k: 'vibe', label: 'ミスで振動', opts: [[1, 'オン'], [0, 'オフ']], help: '対応していない端末では振動しません' },
-    { k: 'measures', label: 'リズムの長さ', opts: [[1, '1小節'], [2, '2小節']], help: 'リズムのタブで出すフレーズの長さ' },
+    { k: 'measures', only: 'staff', label: 'リズムの長さ', opts: [[1, '1小節'], [2, '2小節']], help: 'リズムのタブで出すフレーズの長さ' },
   ];
 }
 function renderSettings() {
   $('settingsBody').innerHTML =
     defs()
+      .filter((d) => !d.only || d.only === S.form)
       .map(
         (d) =>
           `<div class="row"><label>${d.label}</label><div class="seg">${d.opts
@@ -379,11 +432,19 @@ function renderStats() {
     })
     .sort((x, y) => y.rate - x.rate || y.r.m - x.r.m)
     .slice(0, 8);
-  const bests = [...Object.entries(store.best), ...Object.entries(store.bestChord)].sort((x, y) => y[1] - x[1]);
-  const bestTxt = (k) => {
+  const staffTxt = (k) => {
     const [c, l, ac, o, ch] = k.split('-');
     return `${CLEFN[c]}・加線${+l ? l + '本' : 'なし'}・♯♭${+ac ? 'あり' : 'なし'}・${+o ? '高さ' : '音名'}${ch ? `・${ch}音の和音` : ''}`;
   };
+  const bests = [
+    ...[...Object.entries(store.best), ...Object.entries(store.bestChord)].map(([k, v]) => [staffTxt(k), v]),
+    ...Object.entries(store.bestName).map(([k, v]) => [nameText(...k.split('-')), v]),
+  ].sort((x, y) => y[1] - x[1]);
+  const weakChords = Object.entries(store.chordStats)
+    .filter(([, r]) => r.s >= 3 && r.m > 0)
+    .map(([id, r]) => ({ id, r, rate: r.m / r.s }))
+    .sort((x, y) => y.rate - x.rate || y.r.m - x.r.m)
+    .slice(0, 8);
   $('statsBody').innerHTML = `
     <p class="sec-t">このセッション</p>
     <div class="kv">
@@ -401,9 +462,17 @@ function renderStats() {
           )
           .join('')}</tbody></table>`
       : '<p class="empty">まだデータがありません。練習を続けると、間違えやすい音がここに並びます。</p>'}
+    ${weakChords.length
+      ? `<p class="sec-t">苦手なコード（3回以上出たコードのミス率）</p><table class="weak"><tbody>${weakChords
+          .map(
+            (x) => `<tr><td><b>${x.id}</b></td>
+      <td><span class="bar-mini" style="width:${Math.max(4, Math.round(x.rate * 60))}px"></span>${Math.round(x.rate * 100)}%ミス（${x.r.s}回）</td></tr>`
+          )
+          .join('')}</tbody></table>`
+      : ''}
     <p class="sec-t">60秒チャレンジの自己ベスト</p>
     ${bests.length
-      ? `<table class="weak"><tbody>${bests.map(([k, v]) => `<tr><td>${bestTxt(k)}</td><td><b>${v}音</b></td></tr>`).join('')}</tbody></table>`
+      ? `<table class="weak"><tbody>${bests.map(([t, v]) => `<tr><td>${t}</td><td><b>${v}${t.startsWith('コード名') ? '個' : '音'}</b></td></tr>`).join('')}</tbody></table>`
       : '<p class="empty">まだ記録がありません。</p>'}
     <button class="danger${armed ? ' armed' : ''}" id="reset">${armed ? 'もう一度押すと消去します' : 'すべての記録を消す'}</button>`;
   $('reset').addEventListener('click', () => {
@@ -416,6 +485,8 @@ function renderStats() {
     store.notes = {};
     store.best = {};
     store.bestChord = {};
+    store.bestName = {};
+    store.chordStats = {};
     save();
     renderStats();
   });

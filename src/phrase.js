@@ -63,10 +63,13 @@ export function displayAccidentals(phrase) {
   });
 }
 
+/** MIDI numbers of an event: staff notes, or the voicing of a chord-progression event (chords.js). */
+const midisOf = (e) => e.midis ?? e.notes.map(midiOf);
+
 /** Expected onsets for judging: [{t: ms from the first beat, notes: MIDI numbers}] for every sounding event. */
 export function expectedOnsets(phrase, bpm) {
   const beatMs = 60000 / bpm;
-  return phrase.events.filter((e) => !e.rest).map((e) => ({ t: e.beat * beatMs, notes: e.notes.map(midiOf) }));
+  return phrase.events.filter((e) => !e.rest).map((e) => ({ t: e.beat * beatMs, notes: midisOf(e) }));
 }
 
 /**
@@ -78,7 +81,7 @@ export function phraseTones(phrase, bpm) {
   return phrase.events
     .map((e, index) => ({ e, index }))
     .filter(({ e }) => !e.rest)
-    .map(({ e, index }) => ({ index, t: e.beat * beatMs, dur: e.dur * beatMs, notes: e.notes.map(midiOf) }));
+    .map(({ e, index }) => ({ index, t: e.beat * beatMs, dur: e.dur * beatMs, notes: midisOf(e) }));
 }
 
 /** Length of the phrase in ms. */
