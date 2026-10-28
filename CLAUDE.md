@@ -16,6 +16,9 @@
   - `rhythm.js`：リズムモードの画面の流れ / `score.js`：VexFlow でのフレーズの描画（リズムモードに入ったときだけ読み込む）
   - `metronome.js`：Web Audio でのクリックの予約、音声の時刻と `performance.now()` の換算
   - `chords.js`：コード名（構成音の綴り、種類、ルート）とダイアトニックのコード進行（純粋関数） / `chart.js`：コード進行のコード譜の描画
+  - `musicxml.js`：MusicXML（.mxl の展開を含む）を音の並び（拍・高さ・右手/左手・小節）にする（純粋関数。テストは happy-dom）
+  - `song.js`：「曲」タブの画面の流れ / `sheet.js`：OpenSheetMusicDisplay での楽譜表示とカーソル（曲タブに入ったときだけ読み込む）
+  - `wake.js`：練習中に画面を消さない（Wake Lock）
 - 設定の「形式」が「コード名」のとき、練習・60 秒はコード名の出題、リズムはコード進行になる。
   コード名の判定は音名（ピッチクラス）の集合で行い、転回・オクターブ・重ねは問わない。 / `keyboard.js`：画面の鍵盤 / `audio.js`：合成音と振動
   - `midi-input.js`：電子ピアノからの入力（Web MIDI） / `store.js`：設定と記録 / `version.js`：表示バージョン

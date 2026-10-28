@@ -7,6 +7,7 @@ import { perfTimeOf, scheduleClicks } from './metronome.js';
 import { expectedOnsets, makePhrase, phraseMs, phraseTones } from './phrase.js';
 import { JUDGE_WINDOWS, RANKS, estimateLatency, judgePerformance, matchWindowMs, onsetIndexAt, rankOf } from './timing.js';
 import { makeProgression } from './chords.js';
+import { keepAwake, releaseWake } from './wake.js';
 import { drawChart } from './chart.js';
 
 export const BPM_MIN = 40, BPM_MAX = 200;
@@ -24,7 +25,7 @@ const signed = (ms) => (ms > 0 ? '+' : ms < 0 ? '−' : '±') + Math.abs(Math.ro
 export function createRhythmMode({ $, getPool, weightOf, setFb, isName }) {
   let score = null; // lazily imported score.js
   let phrase = null, state = 'idle', marks = [];
-  let played = [], taps = [], heard = [], phraseStart = 0, clicks = null, tones = [], timers = [], wake = null;
+  let played = [], taps = [], heard = [], phraseStart = 0, clicks = null, tones = [], timers = [];
   let beforeDemo = null; // screen to restore after the model performance
   let expected = [], announced = new Set(); // onsets of the phrase being played, and those already judged live
   const newSes = () => ({ notes: 0, points: 0, combo: 0, maxCombo: 0, lastAbs: null });
@@ -75,19 +76,6 @@ export function createRhythmMode({ $, getPool, weightOf, setFb, isName }) {
     $('hTime').innerHTML = ses.lastAbs == null ? '–' : Math.round(ses.lastAbs) + '<small>ms</small>';
   }
 
-  /* ---------- wake lock: keep the screen on while practicing ---------- */
-  async function keepAwake() {
-    try {
-      if (navigator.wakeLock && !wake) {
-        wake = await navigator.wakeLock.request('screen');
-        wake.addEventListener('release', () => (wake = null));
-      }
-    } catch (e) {}
-  }
-  function releaseWake() {
-    if (wake) wake.release().catch(() => {});
-    wake = null;
-  }
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && state !== 'idle') keepAwake();
     if (document.visibilityState === 'hidden' && (state === 'count' || state === 'play' || state === 'demo')) cancel();

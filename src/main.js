@@ -9,6 +9,7 @@ import { attachTapInput, buildKeyboard, clearMarks, flash, keyForMidi } from './
 import { playTone, unlock, vibrate } from './audio.js';
 import { createMidiInput } from './midi-input.js';
 import { createRhythmMode } from './rhythm.js';
+import { createSongMode } from './song.js';
 import { PROGRESSIONS, chordPool, pickChordName } from './chords.js';
 
 const $ = (id) => document.getElementById(id);
@@ -27,13 +28,13 @@ const NAME_WINDOW_MS = 300;
 
 const nm = (n, withOct) => noteName(n, S.names, withOct);
 function draw() {
-  const asName = isName() && mode !== 'rhythm';
-  $('staff').toggleAttribute('hidden', mode === 'rhythm' || asName); // an SVG element has no .hidden property
+  const drill = mode === 'practice' || mode === 'timed', asName = isName() && drill;
+  $('staff').toggleAttribute('hidden', !drill || asName); // an SVG element has no .hidden property
   $('cname').hidden = !asName;
   if (asName) {
     $('cname').textContent = cur ? cur.chord.name : '';
     $('cname').classList.toggle('ng', !!(cur && cur.missed));
-  } else if (mode !== 'rhythm') drawStaff($('staff'), S.clef, cur);
+  } else if (drill) drawStaff($('staff'), S.clef, cur);
 }
 
 function rebuildPool() {
@@ -84,6 +85,7 @@ function onKey(el, t) {
   unlock();
   if (S.sound) playTone(m);
   if (mode === 'rhythm') return rhythm.onNote(m, t);
+  if (mode === 'song') return;
   if (multi()) {
     // Chords: taps select keys, 決定 submits them.
     if (!locked) el.classList.toggle('sel');
@@ -181,6 +183,7 @@ attachTapInput($('kb'), $('kbwrap'), onKey);
 
 function hud() {
   if (mode === 'rhythm') return rhythm.hud();
+  if (mode === 'song') return song.hud();
   $('hL1').textContent = '正解';
   $('hL2').textContent = '連続';
   $('hL3').textContent = '正答率';
@@ -276,8 +279,10 @@ const rhythm = createRhythmMode({
   setFb,
   isName,
 });
+const song = createSongMode({ $, setFb });
 function setMode(m) {
   if (mode === 'rhythm') rhythm.exit();
+  if (mode === 'song') song.exit();
   mode = m;
   clearInterval(timer);
   running = false;
@@ -285,6 +290,17 @@ function setMode(m) {
   $('tabPractice').setAttribute('aria-selected', m === 'practice');
   $('tabTimed').setAttribute('aria-selected', m === 'timed');
   $('tabRhythm').setAttribute('aria-selected', m === 'rhythm');
+  $('tabSong').setAttribute('aria-selected', m === 'song');
+  if (m === 'song') {
+    cur = null;
+    updSubmit();
+    clearMarks();
+    draw();
+    hidePanel();
+    setFb('');
+    song.enter();
+    return;
+  }
   if (m === 'rhythm') {
     cur = null;
     updSubmit();
@@ -311,6 +327,7 @@ function setMode(m) {
 $('tabPractice').addEventListener('click', () => setMode('practice'));
 $('tabTimed').addEventListener('click', () => setMode('timed'));
 $('tabRhythm').addEventListener('click', () => setMode('rhythm'));
+$('tabSong').addEventListener('click', () => setMode('song'));
 
 /* ---------- MIDI input (electronic piano) ---------- */
 const held = new Map(); // note -> on-screen key lit while the piano key is held
@@ -322,7 +339,7 @@ const midi = createMidiInput({
       if (el) el.classList.add('down');
       held.set(ev.note, el);
       if (mode === 'rhythm') rhythm.onNote(ev.note, t);
-      else collectNote(ev.note, el);
+      else if (mode !== 'song') collectNote(ev.note, el);
     } else {
       const el = held.get(ev.note);
       if (el) el.classList.remove('down');

@@ -19,9 +19,10 @@
       <button id="tabPractice" role="tab" aria-selected="true">練習</button>
       <button id="tabTimed" role="tab" aria-selected="false">60秒</button>
       <button id="tabRhythm" role="tab" aria-selected="false">リズム</button>
+      <button id="tabSong" role="tab" aria-selected="false">曲</button>
     </div>
-    <button class="ghost" id="btnStats">記録</button>
-    <button class="ghost" id="btnSettings">設定</button>
+    <button class="ghost icon" id="btnStats" aria-label="記録" title="記録"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V11M12 20V5M19 20v-6"/></svg></button>
+    <button class="ghost icon" id="btnSettings" aria-label="設定" title="設定"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></button>
   </header>
 
   <section class="hud" aria-live="polite">
@@ -35,11 +36,20 @@
     <svg id="staff" viewBox="0 0 260 150" aria-label="五線譜"></svg>
     <div class="score" id="score" aria-label="五線譜" hidden></div>
     <div class="cname" id="cname" aria-live="polite" hidden></div>
+    <div class="song" id="song" hidden>
+      <div class="song-top"><button class="ghost" id="sOpen">楽譜を開く</button><span class="song-title" id="sTitle"></span>
+        <input type="file" id="sFile" accept=".musicxml,.xml,.mxl,application/vnd.recordare.musicxml+xml,application/vnd.recordare.musicxml" hidden></div>
+      <div class="sheet" id="sheet" aria-label="楽譜"></div>
+    </div>
     <div class="midi" id="midiBadge" hidden></div>
     <div class="devtag" id="verBadge" hidden></div>
     <div class="ranks" id="ranks" hidden></div>
     <div class="fb" id="fb"></div>
     <button class="primary submit" id="submit" hidden>決定</button>
+    <div class="rctl" id="sctl" hidden>
+      <div class="bpm"><button class="ghost" id="sBpmDown" aria-label="遅く">−</button><span><b id="sBpmVal">100</b><small>BPM</small></span><button class="ghost" id="sBpmUp" aria-label="速く">＋</button></div>
+      <div class="btns"><button class="primary" id="sPlay" disabled>お手本</button></div>
+    </div>
     <div class="rctl" id="rctl" hidden>
       <div class="bpm"><button class="ghost" id="bpmDown" aria-label="遅く">−</button><span><b id="bpmVal">80</b><small>BPM</small></span><button class="ghost" id="bpmUp" aria-label="速く">＋</button></div>
       <div class="btns"><button class="primary" id="rGo">スタート</button><button class="ghost" id="rDemo">お手本</button><button class="ghost" id="rNext">次へ</button></div>

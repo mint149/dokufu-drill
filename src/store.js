@@ -19,7 +19,9 @@ export const DEF = { clef: 'T', ledger: 2, acc: 0, octave: 0, labels: 'C', names
   // prog: progression id or 'all', ckey 'C' | 'any', harm: beats per chord in progressions.
   form: 'staff', ctype: 1, croot: 'natural', prog: 'all', ckey: 'C', harm: 4,
   // Rhythm judgement windows: 'strict' | 'normal' | 'easy' (see timing.js JUDGE_WINDOWS).
-  jwin: 'normal' };
+  jwin: 'normal',
+  // 曲 tab: last BPM chosen for songs.
+  songBpm: 100 };
 /** Current settings (mutated in place). */
 export const S = Object.assign({}, DEF, store.settings || {});
 /** Settings that change the question pool or keyboard range. */
